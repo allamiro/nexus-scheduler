@@ -53,6 +53,11 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/shared/prisma packages/shared/prisma
 COPY --from=build /app/packages/pdf/package.json packages/pdf/package.json
 COPY --from=build /app/packages/pdf/dist packages/pdf/dist
+# `playwright` isn't hoisted to the root node_modules copied above —
+# npm's workspace install nests it under packages/pdf/node_modules
+# instead (deterministically, per package-lock.json), so Node's ESM
+# resolution from packages/pdf/dist/*.js can't find it without this.
+COPY --from=build /app/packages/pdf/node_modules packages/pdf/node_modules
 COPY --from=build /app/packages/api/package.json packages/api/package.json
 COPY --from=build /app/packages/api/dist packages/api/dist
 

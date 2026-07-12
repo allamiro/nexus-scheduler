@@ -49,6 +49,10 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/shared/prisma packages/shared/prisma
 COPY --from=build /app/packages/pdf/package.json packages/pdf/package.json
 COPY --from=build /app/packages/pdf/dist packages/pdf/dist
+# See packages/api/Dockerfile — `playwright` nests under
+# packages/pdf/node_modules rather than hoisting to the root
+# node_modules copied above.
+COPY --from=build /app/packages/pdf/node_modules packages/pdf/node_modules
 COPY --from=build /app/packages/worker/package.json packages/worker/package.json
 COPY --from=build /app/packages/worker/dist packages/worker/dist
 
