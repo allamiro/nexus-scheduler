@@ -15,6 +15,8 @@ user-supplied API key, storing and surfacing the results.
 Target deployment: air-gapped, security-hardened **Government Kubernetes**
 environment, with a **Docker Compose** setup for local development/testing.
 
+Nexus Scheduler is a component of the broader **MPNexus** platform.
+
 ## 2. Purpose & Core Functionality
 
 - Web application for scheduling agentic AI tasks executed via the
@@ -76,22 +78,32 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
 - Email notification (via SMTP) is optionally sent to the job owner on
   completion and/or failure, per-job configurable.
 
-### 2.3 Saved & Shareable Prompts (Projects)
+### 2.3 Saved & Shareable Prompts (Projects & Teams)
 
 - Users can save reusable prompt/job templates rather than re-authoring
   them per schedule.
 - Saved prompts are organized into **Projects** — shared containers that
   group related prompts/jobs so power users can collaborate and reuse each
   other's work.
-- Each Project has an owner and a visibility/sharing setting (e.g.
-  private, shared with specific users, or org-wide/shared with all
-  authenticated users) — exact sharing model to be finalized (see §12).
+- **Teams** are a first-class grouping of users, defined and managed
+  entirely **within Nexus Scheduler's own UI** (not sourced from Keycloak/
+  OIDC groups — local-only, admin/editor-managed membership).
+- **Project ACLs are granted by individual user or by Team**: a Project
+  owner can share a Project (read or edit access) with one or more
+  specific users, one or more Teams, or org-wide/all authenticated users.
+  Private (owner-only) remains the default for new Projects.
 - A saved prompt in a shared Project can be used as the basis for a new
   job/schedule by any user with access to that Project, without needing to
   know the underlying LibreChat agent/prompt details.
-- Editing a shared prompt is restricted to the Project owner/collaborators
-  with edit access; other members with access can view and use (copy/run)
-  it per the role model (§4).
+- Editing a shared prompt is restricted to users/Teams granted edit access
+  on the Project; users/Teams with read-only access can view and use
+  (copy/run) it, per the role model (§4).
+- **Saved prompts support version history**: every edit to a prompt
+  creates a new version, prior versions remain viewable/diffable, and a
+  prompt can be reverted to an earlier version. Job/schedule definitions
+  reference a specific prompt version so in-flight schedules aren't
+  silently altered by a later edit (schedules can opt in to "always use
+  latest" or pin to a version).
 
 ## 3. Constraints
 
@@ -138,10 +150,16 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
   - **view** — read-only access to job definitions, schedules, run
     history/output, audit logs, and shared Projects/prompts (can view and
     copy shared prompts, but cannot create schedules or run jobs).
-- Role assignment supported both via local role management and via OIDC
-  group/role claim mapping. Confirmed approach: map role from an OIDC
-  group/role claim (claim name admin-configurable) with a fallback default
-  role for authenticated users who have no matching claim.
+- Role assignment supported both via local role management and via OIDC.
+  Confirmed approach: map Nexus Scheduler role from a **Keycloak client
+  role** (a client role scoped to the Nexus Scheduler client in Keycloak,
+  delivered in the token's `resource_access.<client_id>.roles` claim, per
+  standard Keycloak client-role conventions) rather than a realm-wide
+  group claim — this keeps role administration scoped to Nexus Scheduler
+  within Keycloak. A fallback default role applies to authenticated users
+  with no matching client role.
+- **Teams** (see §2.3) are separate from roles/OIDC entirely — they are
+  local-only groupings used for Project sharing, not for permissions.
 - Passwords for local accounts must be stored using a strong adaptive hash
   (e.g., bcrypt/argon2); no plaintext or reversible storage.
 - Per-user LibreChat API keys must be stored **encrypted at rest**.
@@ -176,12 +194,17 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
   admin.
 - Audit records are stored in **PostgreSQL** (structured, queryable) as
   the system of record for local retention/UI display.
-- Nexus Scheduler must **also support emitting logs via syslog** (e.g.
-  RFC 5424, over UDP/TCP/TLS to an admin-configured destination) so
+- Nexus Scheduler must **also support emitting logs via syslog** so
   Government environments can forward application/audit events into an
   existing centralized log pipeline (e.g. SIEM), independent of the
-  14-day local Postgres retention. Syslog output should be enable/
-  disable-able and point at an admin-configured host:port.
+  14-day local Postgres retention.
+  - Message format: **RFC 5424** (structured syslog protocol).
+  - Transport: **RFC 6587**-style framing over TCP or UDP; **TLS is
+    optional** (RFC 5425 syslog-over-TLS), admin-configurable per
+    destination rather than mandatory — matches environments that already
+    terminate transport security at the network layer.
+  - Enable/disable and destination (host:port, transport, TLS on/off) are
+    admin-configurable.
 
 ## 7. Deployment
 
@@ -249,8 +272,9 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
   - Redis used as the job queue / scheduling coordination layer (e.g.,
     backing a queue library) to support concurrency and horizontal scaling
     of workers.
-- **Database**: PostgreSQL — users, roles, job definitions, schedules,
-  run history, audit log, Projects, saved prompts.
+- **Database**: PostgreSQL — users, roles, Teams (+ membership), job
+  definitions, schedules, run history, audit log, Projects, saved prompts
+  (+ prompt version history).
 - **Reverse proxy**: nginx (external/pre-existing in prod; included in
   Compose for local parity).
 
@@ -271,23 +295,22 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
   status/history record.
 - **Project**: a shared container for saved prompts/job templates that a
   group of users collaborate on and reuse.
+- **Team**: a locally-defined (UI-managed) group of users, used as a
+  sharing target for Project ACLs; independent of roles and OIDC groups.
 
 ## 12. Open Questions
 
-- Exact Project sharing/ACL granularity: is "shared with specific users"
-  needed at launch, or is private + org-wide sufficient for v1?
-- Should saved prompts support versioning/history (e.g. see prior edits),
-  or just a single current version?
-- Syslog message format details: RFC 5424 structured-data fields for
-  audit events, and whether TLS-syslog is mandatory in the target
-  Government environment or optional/admin-configured.
-- Confirm the OIDC role/group claim name convention (e.g.
-  `groups` vs a custom claim) against the target Keycloak realm
-  configuration once available.
-- Should the 25 global / 5 per-user concurrency defaults be revisited
-  once real usage patterns are observed, or is there a known peak load
-  (e.g. batch of scheduled reports at top of hour) that should inform
-  sizing now?
+- Exact structured-data fields to include in RFC 5424 syslog messages for
+  each audited event type (e.g. actor, action, target, result) — needs a
+  concrete field schema.
+- Concurrency defaults (25 global / 5 per-user) are accepted as a
+  starting point; **explicitly deferred for revisit** once real usage
+  patterns are observed post-launch — no action needed now.
+- Should Team membership support nesting (teams of teams) or only flat
+  membership? Defaulting to flat unless a need emerges.
+- Should prompt version pinning ("always latest" vs. pinned version) be
+  the schedule owner's choice per-schedule (current assumption), or a
+  Project-level policy set by the Project owner?
 
 ## 13. Change Log
 
@@ -299,3 +322,10 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
   documented concrete LibreChat Agents API integration details; added
   syslog output alongside Postgres audit storage; added Projects /
   shareable saved-prompts feature (§2.3).
+- 2026-07-12: Added Teams (local, UI-managed groups) as a Project ACL
+  sharing target alongside individual users; added saved-prompt version
+  history with per-schedule version pinning; confirmed OIDC role mapping
+  uses Keycloak **client roles** rather than realm groups; syslog output
+  confirmed as RFC 5424 with optional (admin-configurable) TLS; noted
+  Nexus Scheduler is part of the MPNexus platform; concurrency defaults
+  explicitly deferred for post-launch revisit.
