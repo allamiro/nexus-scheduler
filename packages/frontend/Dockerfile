@@ -8,6 +8,12 @@
 FROM node:20-slim AS build
 WORKDIR /app
 
+# See packages/api/Dockerfile for why this is needed — building
+# packages/shared here also runs `prisma generate`, which needs OpenSSL
+# present to detect the right engine binary.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/pdf/package.json packages/pdf/package.json

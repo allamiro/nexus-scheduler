@@ -9,6 +9,14 @@
 FROM node:20-slim AS build
 WORKDIR /app
 
+# Prisma's schema/query engine binaries are linked against OpenSSL and
+# need it present to detect the right build to use — `node:20-slim`
+# doesn't ship it. Without this, `prisma generate`/`db push` silently
+# guess a version ("Prisma failed to detect the libssl/openssl version")
+# and can fail outright at either build or run time.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/pdf/package.json packages/pdf/package.json
@@ -28,6 +36,10 @@ RUN npm run build --workspace=packages/api
 FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# See the build stage above — @prisma/client needs OpenSSL present at
+# runtime too, for every query it makes.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 # PDF report rendering (REQUIREMENTS §2.5) uses headless Chromium via
 # Playwright, installed below into a fixed, world-readable path so the
 # non-root `nexus` user (created next) can still launch it.

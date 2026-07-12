@@ -8,6 +8,11 @@
 FROM node:20-slim AS build
 WORKDIR /app
 
+# See packages/api/Dockerfile for why this is needed — same Prisma/
+# OpenSSL detection issue applies here.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/pdf/package.json packages/pdf/package.json
@@ -27,6 +32,10 @@ RUN npm run build --workspace=packages/worker
 FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# See the build stage above — @prisma/client needs OpenSSL present at
+# runtime too, for every query it makes.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 # PDF report email attachments (§2.2/§2.5) use headless Chromium via
 # Playwright, installed below into a fixed, world-readable path so the
 # non-root `nexus` user (created next) can still launch it.
