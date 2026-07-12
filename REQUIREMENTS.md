@@ -71,6 +71,15 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
   response from LibreChat), mark the key invalid, notify the owning user
   (UI banner + email), and **pause rather than silently fail** any
   schedules depending on that key until it's replaced.
+- **Team-owned API keys**: in addition to per-user keys, a **Team** (§2.3)
+  can hold its own LibreChat API key, enterable by any Team member with
+  edit rights. A job/schedule inside a Team-shared Project can be
+  configured to run under the **Team's key** instead of its creator's
+  personal key — this keeps shared, durable automation working when the
+  original creator leaves the Team, is deactivated, or rotates their
+  personal key. Team-key expiration/revocation follows the same
+  detect-and-pause handling as personal keys, notifying Team
+  members with edit rights instead of a single user.
 - **Default execution timeout: 10 minutes per job run**, admin-configurable
   with a hard ceiling of 60 minutes (agentic/multi-step tasks can run long,
   but an unbounded call risks starving worker capacity). Jobs may override
@@ -135,8 +144,11 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
 - Schedules can be **paused/resumed** without deleting them (and without
   losing run history) — a common operational need for "pause this report
   while I'm on leave" type workflows.
-- **Missed-run handling** (e.g. scheduler/worker downtime spans a fire
-  time): open question, see §12.
+- **Missed-run handling**: if the scheduler/worker is down across a
+  scheduled fire time, the missed fire is **skipped** — the next
+  occurrence fires normally on its regular schedule. Avoids surprise
+  bursts of stale/backlogged agentic runs after an outage or deploy. A
+  skipped fire is still recorded (as a `skipped` run) for visibility.
 
 ## 3. Constraints
 
@@ -263,9 +275,9 @@ and a human-readable summary form the `MSG` body.
 - Local log/audit retention: **14 days by default**, configurable by
   admin. This governs the **audit trail** (§6.1 events). **Job run
   history/output (§2.2) is a separate, product-facing dataset and is not
-  bound by the 14-day audit window** — its retention period is an open
-  question (see §12), since users will want to reference past run
-  results well beyond two weeks.
+  bound by the 14-day audit window**: default retention is **90 days**,
+  admin-configurable, with an admin-triggered purge/archival job past
+  that window.
 - Audit records are stored in **PostgreSQL** (structured, queryable) as
   the system of record for local retention/UI display.
 - Nexus Scheduler must **also support emitting logs via syslog** so
@@ -333,11 +345,14 @@ and a human-readable summary form the `MSG` body.
 - Dependency/container images scanned for CVEs as part of the build
   pipeline (tooling TBD — must itself be air-gap-compatible).
 - No telemetry/analytics calls to external services (air-gap constraint).
-- **FIPS 140-2/140-3 validated cryptography**: whether this is a hard
-  requirement for the target Government network is an open question (see
-  §12) — if required, it constrains base image/runtime and crypto library
-  choices (e.g. OpenSSL FIPS module, distro FIPS mode) and should be
-  decided before implementation starts.
+- **FIPS 140-2/140-3 validated cryptography is required.** All
+  cryptographic operations (TLS, password hashing/KDF, at-rest encryption
+  of API keys and other secrets) must use FIPS-validated modules. This
+  constrains implementation choices made later: base container images
+  must run in FIPS mode (e.g. a FIPS-enabled UBI/RHEL-based image or
+  distro with a validated OpenSSL/BoringCrypto module), and language
+  runtimes/crypto libraries must be selected for FIPS-mode compatibility
+  rather than assumed compatible after the fact.
 - **Operational health & metrics**: Kubernetes liveness/readiness probe
   endpoints on both the API and scheduler/worker containers, plus a
   Prometheus-compatible `/metrics` endpoint (queue depth, running job
@@ -361,9 +376,9 @@ and a human-readable summary form the `MSG` body.
   - Redis used as the job queue / scheduling coordination layer (e.g.,
     backing a queue library) to support concurrency and horizontal scaling
     of workers.
-- **Database**: PostgreSQL — users, roles, Teams (+ membership), job
-  definitions, schedules, run history, audit log, Projects, saved prompts
-  (+ prompt version history).
+- **Database**: PostgreSQL — users, roles, Teams (+ membership + Team-
+  owned API keys), job definitions, schedules, run history, audit log,
+  Projects, saved prompts (+ prompt version history).
 - **Reverse proxy**: nginx (external/pre-existing in prod; included in
   Compose for local parity).
 - Both the Backend API and Scheduler/Worker expose `/healthz`
@@ -388,24 +403,10 @@ and a human-readable summary form the `MSG` body.
   group of users collaborate on and reuse.
 - **Team**: a locally-defined (UI-managed) group of users, used as a
   sharing target for Project ACLs; independent of roles and OIDC groups.
+  Can optionally hold its own LibreChat API key for shared schedules.
 
 ## 12. Open Questions
 
-- **Team/service-owned schedule execution identity**: when a schedule
-  lives in a Team-shared Project, whose LibreChat API key executes it —
-  always the creator's personal key, or should Nexus Scheduler support a
-  Team/service-level API key so execution doesn't break if the creator
-  leaves or their key is revoked?
-- **Job run history retention**: now explicitly decoupled from the
-  14-day audit default (§6) — what should the default retention for
-  run history/output actually be (e.g. 90 days, 1 year, indefinite with
-  admin-configurable purge)?
-- **Missed-run / catch-up semantics** (§2.4): if the scheduler/worker is
-  down across a scheduled fire time, should the run fire immediately on
-  recovery ("catch-up"), be skipped entirely, or should this be
-  configurable per schedule?
-- **FIPS 140-2/140-3 validated cryptography** (§8): hard requirement for
-  this Government network, or standard hardened crypto is sufficient?
 - Accessibility conformance scope (§5): confirm WCAG 2.1 AA is the right
   target (vs. a formal Section 508 VPAT requirement) and how it will be
   tested/verified.
@@ -445,3 +446,10 @@ and a human-readable summary form the `MSG` body.
   questions raised: Team/service-owned schedule execution identity,
   run-history retention default, missed-run/catch-up semantics, and
   whether FIPS-validated crypto is mandatory.
+- 2026-07-12: Resolved remaining gap-analysis questions — Teams can hold
+  their own LibreChat API key so Team-shared schedules survive creator
+  turnover/key revocation; job run history/output retention defaults to
+  90 days (separate from the 14-day audit window); missed schedule fires
+  are skipped (not caught up) on scheduler/worker recovery; FIPS 140-2/
+  140-3 validated cryptography is now a **required** constraint on base
+  images and crypto library choices.
