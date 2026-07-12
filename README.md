@@ -64,15 +64,20 @@ realm and client manually to test the OIDC login flow end to end.
 **LibreChat first-run setup** — none of this is scriptable, it's
 LibreChat's own UI flow, and it's what actually makes a Job runnable
 end to end rather than just erroring against a nonexistent backend:
-1. Add at least one real AI provider key (`OPENAI_API_KEY`,
-   `ANTHROPIC_API_KEY`, etc.) to `docker/librechat/.env`, then
-   `docker compose restart librechat` — LibreChat has nothing to call
-   without one.
+1. Set `ANTHROPIC_API_KEY` in this repo's own root `.env` to a real key
+   from https://console.anthropic.com/ — Claude/Anthropic is wired up
+   as LibreChat's provider for local testing (`ENDPOINTS=anthropic` in
+   `docker-compose.yml` keeps LibreChat's UI to just that one provider
+   rather than a dropdown full of others with no key configured). Other
+   providers (`OPENAI_API_KEY`, `AZURE_API_KEY`) can still be set
+   directly in `docker/librechat/.env` if you'd rather test against
+   those instead. Either way: `docker compose restart librechat` —
+   LibreChat has nothing to call without at least one provider key.
 2. Visit http://localhost:3080 and register an account (this is
    LibreChat's own local auth — `ALLOW_REGISTRATION=true` is set by
    default in the generated env file — separate from Nexus Scheduler's
    own users entirely).
-3. Create an Agent in LibreChat's UI.
+3. Create an Agent in LibreChat's UI, backed by a Claude model.
 4. Generate a LibreChat API key for that account (REQUIREMENTS §2.1:
    LibreChat API keys are created via `POST /api/api-keys` on the
    LibreChat side, outside Nexus Scheduler).
@@ -87,11 +92,16 @@ disabled (`SEARCH=false`) rather than left pointing at a service that
 isn't running.
 
 **If you already had a `.env` from before LibreChat was added**:
-`generate-local-env.sh` never overwrites an existing `.env`, so it'll
-still have the old `LIBRECHAT_BASE_URL=http://host.docker.internal:3080`
-default. Edit that one line to `http://librechat:3080` by hand (re-running
-the script will still create the new `docker/librechat/.env` alongside
-it, since that file didn't exist before).
+`generate-local-env.sh` never overwrites an existing `.env`, so it won't
+pick up new variables added to the template later. Add these two lines
+by hand:
+```
+LIBRECHAT_BASE_URL=http://librechat:3080
+ANTHROPIC_API_KEY=
+```
+(fill in a real key on the second line to use Claude — re-running the
+script will still create `docker/librechat/.env` alongside your
+existing root `.env`, since that file didn't exist before).
 
 **Postgres "password authentication failed"**: Postgres only sets its
 user's password when its data directory is first initialized — if the

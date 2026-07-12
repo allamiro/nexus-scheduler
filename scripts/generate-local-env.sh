@@ -42,9 +42,16 @@ BOOTSTRAP_ADMIN_PASSWORD=$(random_hex 16)
 # (see docker/librechat/.env for its own config) rather than an
 # externally-run instance.
 LIBRECHAT_BASE_URL=http://librechat:3080
+
+# Claude/Anthropic as LibreChat's provider for local testing (optional
+# — leave blank and LibreChat just won't offer it as an endpoint). Get
+# a key at https://console.anthropic.com/ — docker-compose.yml passes
+# this straight into the librechat container's environment.
+ANTHROPIC_API_KEY=
 EOF
   echo "Wrote .env with freshly generated local secrets."
   echo "Built-in admin: BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD in .env"
+  echo "Set ANTHROPIC_API_KEY in .env to use Claude as LibreChat's provider for testing."
 fi
 
 mkdir -p docker/librechat
@@ -68,12 +75,15 @@ JWT_REFRESH_SECRET=$(random_hex 32)
 CREDS_KEY=$(random_hex 32)
 CREDS_IV=$(random_hex 16)
 
-# At least one of these is required before you can create an Agent in
-# LibreChat — it has nothing to call otherwise. Fill in a real key,
-# then: docker compose restart librechat
+# At least one provider is required before you can create an Agent in
+# LibreChat — it has nothing to call otherwise. Claude/Anthropic is set
+# via ANTHROPIC_API_KEY in this repo's own root .env instead (docker-
+# compose.yml injects it into this container, overriding anything set
+# here) so there's one place to put it rather than two. Other providers
+# still go here directly, then: docker compose restart librechat
 OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
 AZURE_API_KEY=
 EOF
-  echo "Wrote docker/librechat/.env — add a provider API key before creating an Agent (see README)."
+  echo "Wrote docker/librechat/.env."
+  echo "Set ANTHROPIC_API_KEY in .env (root) to use Claude, or add another provider's key here."
 fi

@@ -10,11 +10,12 @@
 # :8081 (Keycloak, admin/${KEYCLOAK_ADMIN_PASSWORD}), :3080 (LibreChat).
 #
 # LibreChat needs at least one AI provider API key before it can run an
-# Agent — add one to docker/librechat/.env (generated on first run,
-# alongside this file's own .env) and `docker compose restart
-# librechat`. See README's Docker Compose section for the full
-# first-run flow (register in LibreChat, create an Agent, generate a
-# LibreChat API key, paste it into Nexus Scheduler's own API Keys page).
+# Agent. Claude/Anthropic is wired up as the provider for local testing
+# — set ANTHROPIC_API_KEY in this file's own root .env, then
+# `docker compose restart librechat`. See README's Docker Compose
+# section for the full first-run flow (register in LibreChat, create an
+# Agent, generate a LibreChat API key, paste it into Nexus Scheduler's
+# own API Keys page).
 
 services:
   postgres:
@@ -91,6 +92,16 @@ services:
       PORT: 3080
       MONGO_URI: mongodb://librechat-mongo:27017/LibreChat
       SEARCH: "false"
+      # Claude as the provider for local testing — set ANTHROPIC_API_KEY
+      # in this repo's own root .env (not docker/librechat/.env) so
+      # there's one place to drop a real key. ENDPOINTS=anthropic keeps
+      # LibreChat's UI to just that one provider rather than showing a
+      # dropdown full of other unconfigured options nobody asked for.
+      # Compose's injected environment here always wins over whatever's
+      # in the bind-mounted docker/librechat/.env for the same key, so
+      # that file no longer carries its own ANTHROPIC_API_KEY line.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENDPOINTS: anthropic
     volumes:
       - type: bind
         source: ./docker/librechat/.env
