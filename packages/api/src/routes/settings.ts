@@ -17,6 +17,18 @@ const PUBLIC_FIELDS = {
   classificationBannerTextColor: true,
 } as const;
 
+// Shared with the PDF report route (§2.5) — reports carry the same
+// branding/banner as the web UI's GET /api/settings, so both read
+// through this one query rather than risking the two drifting apart.
+export async function getPublicAppSettings() {
+  return prisma.appSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: { id: SETTINGS_ID },
+    update: {},
+    select: PUBLIC_FIELDS,
+  });
+}
+
 export function createSettingsRouter(config: AppConfig): Router {
   const router = Router();
 
@@ -30,13 +42,7 @@ export function createSettingsRouter(config: AppConfig): Router {
   // internal infrastructure detail (host, username, and — even
   // encrypted — password ciphertext) with no business being public.
   router.get("/", async (_req, res) => {
-    const settings = await prisma.appSettings.upsert({
-      where: { id: SETTINGS_ID },
-      create: { id: SETTINGS_ID },
-      update: {},
-      select: PUBLIC_FIELDS,
-    });
-    res.json(settings);
+    res.json(await getPublicAppSettings());
   });
 
   // Full settings for the admin panel, including SMTP — password

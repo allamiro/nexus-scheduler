@@ -10,6 +10,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/pdf/package.json packages/pdf/package.json
 COPY packages/api/package.json packages/api/package.json
 COPY packages/worker/package.json packages/worker/package.json
 COPY packages/frontend/package.json packages/frontend/package.json

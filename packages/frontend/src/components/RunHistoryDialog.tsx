@@ -94,10 +94,21 @@ export function RunHistoryDialog({
               </ListItemButton>
               <Collapse in={expandedRunId === run.id} unmountOnExit>
                 <Box sx={{ px: 2, pb: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Started: {run.startedAt ? new Date(run.startedAt).toLocaleString() : "—"} · Completed:{" "}
-                    {run.completedAt ? new Date(run.completedAt).toLocaleString() : "—"}
-                  </Typography>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Started: {run.startedAt ? new Date(run.startedAt).toLocaleString() : "—"} · Completed:{" "}
+                      {run.completedAt ? new Date(run.completedAt).toLocaleString() : "—"}
+                    </Typography>
+                    <Button
+                      size="small"
+                      component="a"
+                      href={`/api/runs/${run.id}/pdf`}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      Download PDF
+                    </Button>
+                  </Stack>
                   {(run.promptTokens != null || run.completionTokens != null) && (
                     <Typography variant="body2" color="text.secondary">
                       Tokens: {run.promptTokens ?? 0} prompt / {run.completionTokens ?? 0} completion

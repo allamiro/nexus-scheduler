@@ -1,11 +1,13 @@
 import { Router } from "express";
 import type { Queue } from "bullmq";
 import type { RunJobData } from "@nexus-scheduler/shared";
+import { renderRunReportPdf } from "@nexus-scheduler/pdf";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireJobAccess } from "../middleware/requireJobAccess.js";
 import { requireRunAccess } from "../middleware/requireRunAccess.js";
 import { recordAuditEvent } from "../audit.js";
+import { getPublicAppSettings } from "./settings.js";
 
 // Mounted at /api/jobs/:jobId/runs (mergeParams) — same access convention
 // as Schedules: READ to view history, EDIT to trigger a manual run
@@ -73,6 +75,73 @@ export function createRunsRouter(): Router {
   router.get("/:id", requireAuth, requireRunAccess("READ"), async (req, res) => {
     const run = await prisma.run.findUnique({ where: { id: req.params.id } });
     res.json(run);
+  });
+
+  // On-demand PDF download (§2.5) — rendered fresh from already-persisted
+  // data, never stored as a binary. Carries the same branding and
+  // system-wide classification banner as the web UI, plus the source
+  // Project's classification label (if any) as a secondary marking.
+  router.get("/:id/pdf", requireAuth, requireRunAccess("READ"), async (req, res) => {
+    const user = req.session.user!;
+    const run = await prisma.run.findUnique({
+      where: { id: req.params.id },
+      include: {
+        job: {
+          include: { project: { include: { classificationLabel: true } } },
+        },
+      },
+    });
+    if (!run) {
+      res.status(404).json({ error: "run not found" });
+      return;
+    }
+
+    const settings = await getPublicAppSettings();
+    const label = run.job.project.classificationLabel;
+
+    const pdf = await renderRunReportPdf({
+      productName: settings.productName,
+      primaryColor: settings.primaryColor,
+      banner: {
+        text: settings.classificationBannerText,
+        backgroundColor: settings.classificationBannerBgColor,
+        textColor: settings.classificationBannerTextColor,
+      },
+      classification: label
+        ? {
+            text: label.abbreviation ? `${label.text} (${label.abbreviation})` : label.text,
+            badgeBgColor: label.badgeBgColor,
+            badgeTextColor: label.badgeTextColor,
+          }
+        : null,
+      jobName: run.job.name,
+      runId: run.id,
+      triggerType: run.triggerType,
+      status: run.status,
+      createdAt: run.createdAt.toISOString(),
+      startedAt: run.startedAt?.toISOString() ?? null,
+      completedAt: run.completedAt?.toISOString() ?? null,
+      promptTokens: run.promptTokens,
+      completionTokens: run.completionTokens,
+      computedCost: run.computedCost?.toString() ?? null,
+      output: run.output,
+      errorMessage: run.errorMessage,
+    });
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: user.id,
+      actorEmail: user.email,
+      action: "run.pdf_download",
+      targetType: "run",
+      targetId: run.id,
+      result: "SUCCESS",
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="run-${run.id}.pdf"`);
+    res.send(pdf);
   });
 
   return router;

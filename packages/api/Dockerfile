@@ -11,20 +11,27 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/pdf/package.json packages/pdf/package.json
 COPY packages/api/package.json packages/api/package.json
 COPY packages/worker/package.json packages/worker/package.json
 COPY packages/frontend/package.json packages/frontend/package.json
 RUN npm ci
 
 COPY packages/shared packages/shared
+COPY packages/pdf packages/pdf
 COPY packages/api packages/api
 RUN npm run prisma:generate --workspace=packages/shared
 RUN npm run build --workspace=packages/shared
+RUN npm run build --workspace=packages/pdf
 RUN npm run build --workspace=packages/api
 
 FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# PDF report rendering (REQUIREMENTS §2.5) uses headless Chromium via
+# Playwright, installed below into a fixed, world-readable path so the
+# non-root `nexus` user (created next) can still launch it.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
 RUN groupadd --system nexus && useradd --system --gid nexus --home-dir /app nexus
 
 COPY --from=build /app/node_modules node_modules
@@ -32,8 +39,19 @@ COPY --from=build /app/package.json package.json
 COPY --from=build /app/packages/shared/package.json packages/shared/package.json
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/shared/prisma packages/shared/prisma
+COPY --from=build /app/packages/pdf/package.json packages/pdf/package.json
+COPY --from=build /app/packages/pdf/dist packages/pdf/dist
 COPY --from=build /app/packages/api/package.json packages/api/package.json
 COPY --from=build /app/packages/api/dist packages/api/dist
+
+# --with-deps installs Chromium plus the OS-level shared libraries it
+# needs (fonts, libnss3, etc.) via apt — requires network access at
+# *build* time only; the renderer itself never makes outbound requests
+# (REQUIREMENTS §2.5/§10). For a true air-gapped build, replace this with
+# a base image that already bundles the matching Chromium build instead
+# of reaching out to the Playwright CDN.
+RUN npx --prefix packages/pdf playwright install --with-deps chromium \
+    && chmod -R a+rX "$PLAYWRIGHT_BROWSERS_PATH"
 
 USER nexus
 EXPOSE 3000

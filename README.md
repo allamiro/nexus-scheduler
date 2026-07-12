@@ -311,7 +311,73 @@ though the payload's `status` field lets a receiver filter client-side.
     output/error detail and a "Run Now" button, polling every 5s so an
     in-flight run's status updates without a manual refresh.
 
-Stubbed / not yet built: PDF report generation, per-user concurrency
-limiting (only the global limit is enforced today), Prometheus metrics,
-and syslog output. See REQUIREMENTS.md for the full feature set these
-should implement.
+- **PDF report generation — on-demand run reports** (§2.5): a new
+  `@nexus-scheduler/pdf` workspace package wraps Playwright headless
+  Chromium (`page.pdf()`), the engine REQUIREMENTS recommends, and is
+  used in-process by the API rather than as the fully isolated
+  separate-pod component §2.5 describes as the ideal — see the known
+  simplification below.
+  - `GET /api/runs/:id/pdf` (behind `requireRunAccess`, same as the
+    run-detail route) renders a run's stored output as a PDF: job name,
+    run ID/status/trigger/timestamps/token counts/cost, and the
+    LibreChat output or error text. Generated fresh on every request
+    from already-persisted data, never stored as a binary, per §2.5.
+  - **Branding and marking carry over**: the report pulls the same
+    `productName`/`primaryColor` and system-wide classification banner
+    text/colors the web UI uses (`getPublicAppSettings()`, now shared
+    between the settings route and the PDF route so the two can't
+    disagree), rendered as the PDF's header *and* footer via
+    Playwright's `headerTemplate`/`footerTemplate` — the same "banner on
+    every page" the app shows top and bottom. If the run's Job's Project
+    carries a classification label, that label is also shown as a badge
+    on the report body as a secondary marking, per §2.5.
+  - **Every interpolated value is HTML-escaped** before it goes into the
+    template (`escapeHtml()`), including the LibreChat-generated
+    `output`/`errorMessage` — that content is untrusted as far as the
+    renderer is concerned, and it gets loaded into a real Chromium page
+    via `page.setContent()`, so unescaped interpolation would be a
+    genuine HTML/script-injection vector into the render process, not
+    just a display bug. Verified with a smoke test using
+    `<script>`/`<b>` payloads in both the job name and output — both
+    render as literal escaped text in the output PDF.
+  - Frontend: a "Download PDF" action on each run's expanded detail in
+    `RunHistoryDialog`, a plain same-origin link (session cookie carries
+    auth) rather than a fetch+blob dance.
+  - Docker: the API image now builds `packages/pdf` and runs
+    `playwright install --with-deps chromium` in its runtime stage
+    (installed to a world-readable `/opt/pw-browsers` so the non-root
+    `nexus` user can still launch it). The `playwright` dependency is
+    pinned to an exact version (not `^`) since each Playwright release
+    is tied to a specific bundled Chromium build — letting it float
+    could silently drift the installed browser out from under a pinned
+    container layer. Helm's default API resource requests/limits were
+    bumped (256Mi/512Mi → 384Mi/1Gi memory, 500m → 1 CPU limit) since a
+    headless Chromium launch briefly needs real headroom.
+
+Known simplification: REQUIREMENTS §2.5 recommends the PDF renderer run
+as a fully isolated component — its own pod, no network egress by
+`NetworkPolicy`, independent crash-restart — separate from both the API
+and Worker. This round implements it as an in-process library inside the
+API instead (ARCHITECTURE.md's container table already listed "in-
+process library or internal call" as an explicit alternative to a
+separate service). That's a real gap from the hardened target: a bug in
+the renderer takes down an API replica rather than an isolated
+component, and there's no `NetworkPolicy` yet actually enforcing "no
+egress" for it (nothing in this repo defines K8s `NetworkPolicy`
+resources at all yet, for any component). Splitting rendering into its
+own internal-only service, with its own Deployment/Service/NetworkPolicy
+in the Helm chart, is a reasonable following piece if the security
+review calls for it.
+
+Also not yet built: **email delivery of the run-report PDF** and
+**admin usage-report PDF export/recurring email** (§2.5's other two
+delivery paths) — both depend on a job-completion email feature that
+doesn't exist yet (only outbound *webhooks* were built for run
+notifications so far; email notification-on-completion is a separate,
+still-stubbed piece of §2.2).
+
+Stubbed / not yet built: job-completion email notifications, PDF email
+delivery / admin usage-report PDF export, an isolated PDF-renderer
+component, per-user concurrency limiting (only the global limit is
+enforced today), Prometheus metrics, and syslog output. See
+REQUIREMENTS.md for the full feature set these should implement.
