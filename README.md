@@ -165,12 +165,16 @@ Correct for the common case (scheduling in your own time zone); a
 dedicated cross-zone one-time picker is a follow-up if that turns out
 to matter.
 
+- **Admin: classification taxonomy** (§6): list/create labels (text,
+  abbreviation, badge colors, sort order, default-for-new-Projects) —
+  the UI for the classification-labels backend that already existed but
+  had no way to actually populate it.
+
 Stubbed / not yet built: prompt **variable substitution UI** (the
 `{{variable}}` declaration form — the worker already resolves them at
 run time, §2.3, but there's no UI to declare non-default values on a
 schedule yet), PDF report generation, webhook delivery, per-user
 concurrency limiting (only the global limit is enforced today),
-Prometheus metrics, syslog output, and most of the admin UI (user
-management, branding, classification-taxonomy editing, cost rates,
-SMTP config). See REQUIREMENTS.md for the full feature set these should
-implement.
+Prometheus metrics, syslog output, and the rest of the admin UI (user/
+role management, branding, cost rates, SMTP config). See REQUIREMENTS.md
+for the full feature set these should implement.
