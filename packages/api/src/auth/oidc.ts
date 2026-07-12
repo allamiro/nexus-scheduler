@@ -6,10 +6,10 @@ import type { Logger } from "../logger.js";
 
 let client: Client | undefined;
 
-// Discovers the Keycloak realm's OIDC configuration once at startup.
-// CAC/PIV smart-card auth happens entirely upstream inside Keycloak
-// (REQUIREMENTS.md §4) — Nexus Scheduler never sees a certificate, only
-// the resulting OIDC token.
+// Discovers the Keycloak realm's OIDC configuration. CAC/PIV smart-card
+// auth happens entirely upstream inside Keycloak (REQUIREMENTS.md §4)
+// — Nexus Scheduler never sees a certificate, only the resulting OIDC
+// token.
 //
 // Deliberately never throws: an unreachable issuer or a realm that
 // hasn't been created yet (the default state of the local Compose
@@ -40,6 +40,21 @@ export async function initOidcClient(config: AppConfig, logger: Logger): Promise
     );
     return undefined;
   }
+}
+
+// Used by request handlers instead of a bare initOidcClient() call: if
+// discovery already succeeded (at startup or a prior request), reuse
+// the cached client; otherwise retry it right now. This is what lets
+// SSO start working the moment an operator finishes creating the
+// Keycloak realm/client, without needing to restart the API — the
+// one-shot call in index.ts's startup path would otherwise leave SSO
+// permanently unavailable for the life of the process if Keycloak
+// wasn't ready (or the realm didn't exist yet) at that exact moment.
+export async function getOrInitOidcClient(config: AppConfig, logger: Logger): Promise<Client | undefined> {
+  if (client) {
+    return client;
+  }
+  return initOidcClient(config, logger);
 }
 
 export function getOidcClient(): Client {

@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { localLoginSchema, forgotPasswordSchema, resetPasswordSchema, hashResetToken } from "@nexus-scheduler/shared";
 import type { AppConfig } from "../config.js";
 import type { Logger } from "../logger.js";
-import { generatePkce, getOidcClient, mapKeycloakRole } from "../auth/oidc.js";
+import { generatePkce, getOrInitOidcClient, mapKeycloakRole } from "../auth/oidc.js";
 import { prisma } from "../db.js";
 import { recordAuditEvent } from "../audit.js";
 import { issuePasswordResetEmail } from "../passwordReset.js";
@@ -18,14 +18,12 @@ const DUMMY_HASH = bcrypt.hashSync("nexus-scheduler-dummy-comparison-target", BC
 export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   const router = Router();
 
-  router.get("/login", (req, res) => {
-    let client;
-    try {
-      client = getOidcClient();
-    } catch {
-      // Covers both "not configured" and "configured but discovery
-      // failed at startup" (e.g. the realm doesn't exist yet) — either
-      // way SSO just isn't available right now, not a server error.
+  router.get("/login", async (req, res) => {
+    // Retries discovery here (rather than only trusting the one-shot
+    // startup attempt) so SSO comes up on its own once the Keycloak
+    // realm/client actually exists, no API restart required.
+    const client = await getOrInitOidcClient(config, logger);
+    if (!client) {
       res.status(503).json({ error: "OIDC is not configured or unavailable on this deployment" });
       return;
     }
@@ -54,7 +52,11 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
     }
 
     try {
-      const client = getOidcClient();
+      const client = await getOrInitOidcClient(config, logger);
+      if (!client) {
+        res.status(503).json({ error: "OIDC is not configured or unavailable on this deployment" });
+        return;
+      }
       const params = client.callbackParams(req);
       const tokenSet = await client.callback(config.OIDC_REDIRECT_URI, params, {
         state: pending.state,
