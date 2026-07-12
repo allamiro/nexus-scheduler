@@ -14,6 +14,7 @@ import { ApiKeysPage } from "./pages/ApiKeysPage";
 import { AdminPage } from "./pages/AdminPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { RequireAuth } from "./components/RequireAuth";
 
 const queryClient = new QueryClient();
 
@@ -40,15 +41,15 @@ function ThemedApp() {
         <BrowserRouter>
           <AppLayout>
             <Routes>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/schedules" element={<SchedulesPage />} />
-              <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/prompts" element={<PromptLibraryPage />} />
-              <Route path="/teams" element={<TeamsPage />} />
-              <Route path="/api-keys" element={<ApiKeysPage />} />
-              <Route path="/admin" element={<AdminPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+              <Route path="/schedules" element={<RequireAuth><SchedulesPage /></RequireAuth>} />
+              <Route path="/projects" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
+              <Route path="/prompts" element={<RequireAuth><PromptLibraryPage /></RequireAuth>} />
+              <Route path="/teams" element={<RequireAuth><TeamsPage /></RequireAuth>} />
+              <Route path="/api-keys" element={<RequireAuth><ApiKeysPage /></RequireAuth>} />
+              <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
             </Routes>
           </AppLayout>
         </BrowserRouter>
