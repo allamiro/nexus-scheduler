@@ -9,7 +9,7 @@
 FROM node:20-slim AS build
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/pdf/package.json packages/pdf/package.json
 COPY packages/api/package.json packages/api/package.json
