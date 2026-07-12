@@ -210,13 +210,40 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
 ### 2.5 Report Generation & Delivery
 
 - Nexus Scheduler can render structured content — a run's output, or an
-  admin usage/audit summary (§8) — as a **PDF report**, using a
-  well-known, actively maintained HTML-to-PDF rendering engine (e.g.
-  headless Chromium print-to-PDF via Puppeteer/Playwright, or WeasyPrint;
-  final choice tracks the backend language selected in §11). The renderer
-  ships bundled in the container image so rendering works fully offline
-  — no CDN fonts/external asset fetches at render time, consistent with
-  the air-gapped constraint (§3).
+  admin usage/audit summary (§8) — as a **PDF report**.
+- **PDF engine: Playwright's headless Chromium (`page.pdf()`), as the
+  recommended default**, run as an isolated internal rendering component
+  rather than embedded in the Worker process directly:
+  - **No network egress** for the rendering component (hard `NetworkPolicy`
+    denying egress, since it should never need the network) — mitigates
+    the larger attack surface of running a full browser engine, per the
+    §10 PDF-renderer network-isolation note.
+  - Own container/pod with its own resource limits and crash-restart,
+    so a renderer fault doesn't take down job execution.
+  - **Reuses the same HTML/CSS templates as the web frontend** for
+    branding (§5) and the classification banner (§6) — one template
+    renders both the on-screen view and the PDF, so branding/marking stay
+    in exact visual sync without maintaining a second template system.
+    Built-in `headerTemplate`/`footerTemplate` support in `page.pdf()`
+    maps directly onto "same banner on every page."
+  - **Fallback: WeasyPrint**, if the eventual backend language lands on
+    Python instead of Node/TypeScript — lighter footprint (no browser
+    engine), with native CSS Paged Media support (`@page { @top-center
+    {...} }`) that's an arguably even more natural fit for repeating
+    headers/footers, at the cost of a separate template system from the
+    React frontend.
+  - **Not recommended**: wkhtmltopdf (aging WebKit fork, inconsistent
+    maintenance/security-patch cadence — a poor fit for a FIPS/Government
+    deployment) and fully programmatic libraries like ReportLab (more
+    dev effort to keep branding in sync with the web UI, unless
+    pixel-level layout control is specifically wanted over HTML/CSS
+    templating).
+  - Final confirmation tracks the backend language decision in §11 — the
+    recommendation above is expected to firm up once the rest of the
+    stack is chosen, not to gate that choice.
+  - Either way, the renderer ships bundled in the container image so
+    rendering works fully offline — no CDN fonts/external asset fetches
+    at render time, consistent with the air-gapped constraint (§3).
 - **Job/run reports**: any run's stored output can be rendered as a PDF
   (job name, run metadata — schedule, timestamp, agent, run ID — plus the
   LibreChat output), available two ways:
@@ -618,9 +645,10 @@ deployment.
   returns a `usage` object on chat-completions responses (expected, since
   it's OpenAI-compatible, but needs a live check against the target
   LibreChat instance before implementation locks in on it).
-- PDF rendering engine choice (§2.5) tracks the backend language/
-  framework decision (e.g. WeasyPrint implies Python, Puppeteer/
-  Playwright implies Node) — finalize together with §11 architecture.
+- PDF engine has a recommended default (Playwright/headless Chromium,
+  §2.5) but final confirmation tracks the backend language/framework
+  decision (falls back to WeasyPrint if Python is chosen) — finalize
+  together with §11 architecture.
 
 ## 15. Change Log
 
@@ -690,3 +718,10 @@ deployment.
   label when present) so marking travels with exported documents. Added
   a security note that the PDF renderer must not fetch remote resources
   at render time, mirroring the webhook allow-list's SSRF rationale.
+- 2026-07-12: Recommended a default PDF engine (§2.5): Playwright's
+  headless Chromium (`page.pdf()`), run as an isolated, network-egress-
+  denied internal component reusing the web frontend's HTML/CSS
+  templates for branding/banner consistency; WeasyPrint noted as the
+  fallback if the backend lands on Python; wkhtmltopdf and fully
+  programmatic libraries (e.g. ReportLab) explicitly not recommended.
+  Final confirmation still tracks the backend language decision (§11).
