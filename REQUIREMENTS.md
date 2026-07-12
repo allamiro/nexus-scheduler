@@ -12,8 +12,10 @@ agent invocations), schedule them as one-time or recurring, and Nexus
 Scheduler executes them concurrently against LibreChat using a
 user-supplied API key, storing and surfacing the results.
 
-Target deployment: air-gapped, security-hardened **Government Kubernetes**
+Target deployment: air-gapped, security-hardened **military Kubernetes**
 environment, with a **Docker Compose** setup for local development/testing.
+Users authenticate via **SSO/OIDC (Keycloak)**, which handles CAC/PIV
+smart-card authentication upstream — see §4.
 
 Nexus Scheduler is a component of the broader **MPNexus** platform.
 
@@ -289,17 +291,40 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
     at deploy or runtime.
   - Container images must be built to be pushed into an internal/offline
     registry.
-- **Government network / high security priority**:
+- **Government/military network / high security priority**:
   - Follow security hardening best practices throughout (see §10).
 - **Use well-known, established components** for each architectural layer
   (e.g., PostgreSQL, Redis, nginx) rather than niche/bespoke tooling.
+- **DoD Iron Bank hardened images, where available**: common third-party
+  components (PostgreSQL, Redis, nginx, and other well-known-component
+  containers per the bullet above) should source from **Iron Bank**
+  where a suitable hardened image exists there, rather than upstream/
+  Docker Hub images, to align with DoD container-hardening expectations.
+- **STIG compliance where feasible**: container images (both
+  Iron-Bank-sourced third-party images and Nexus Scheduler's own
+  application images) should be built/configured to relevant DISA STIG
+  baselines where a baseline applies and is practical to meet — "where
+  feasible" because a custom application image won't always have a
+  directly applicable STIG, unlike a well-known component with an
+  existing hardened baseline.
 
 ## 4. Authentication & Authorization
 
 - Modern, web-based login supporting:
-  - **OIDC** (tested against **Keycloak**).
-  - **Locally managed accounts** (username/password) as a fallback/alt
-    path, for environments without an IdP.
+  - **OIDC** (tested against **Keycloak**) — the **primary and expected
+    path** for this military-network deployment. **CAC/PIV (PKI
+    smart-card) authentication is handled upstream by Keycloak** (e.g.
+    Keycloak's X.509 client-certificate authenticator) — Nexus Scheduler
+    itself only ever consumes the resulting OIDC token/claims and does
+    not implement smart-card auth directly.
+  - **Locally managed accounts** (username/password) as a break-glass/
+    fallback path only, for environments without an IdP available.
+    Because SSO via OIDC is the standard path for this deployment, local
+    accounts are **not held to the same rigor** as SSO (§14 previously
+    flagged MFA-for-local-accounts as a gap — explicitly **not required**
+    by design: local auth is a minimal fallback, not the primary control
+    surface). Baseline password hygiene (strong adaptive hashing, below)
+    still applies since it costs nothing extra.
 - OIDC claims mapping must support:
   - Email
   - Given name
@@ -495,6 +520,10 @@ deployment.
 - **Helm chart** for deployment, optionally including:
   - PostgreSQL (as a subchart/dependency, or bring-your-own).
   - Redis (as a subchart/dependency, or bring-your-own).
+  - Both should default to **Iron Bank images where available** (§3);
+    the chart's image repository/tag values must be overridable so a
+    deployment can point at whichever internal registry mirrors the
+    Iron Bank (or other approved) image.
 - **nginx is not deployed by this chart** — the target environment already
   provides nginx as a reverse proxy in front of the application; the Helm
   chart only needs to expose a standard Service/Ingress the existing proxy
@@ -505,6 +534,13 @@ deployment.
 - Secrets (DB credentials, session signing keys, OIDC client secret, SMTP
   credentials, API key encryption key) sourced from Kubernetes Secrets —
   never baked into images.
+- **Backup/disaster-recovery of PostgreSQL and Redis is an operational
+  responsibility of the hosting platform/admin team, not implemented by
+  Nexus Scheduler itself** — the chart should make standard volume/backup
+  tooling (e.g. Velero, storage-class snapshotting) straightforward to
+  attach, but Nexus Scheduler does not ship its own backup mechanism
+  beyond the §10 JSON import/export of configuration (which is for
+  portability, not disaster recovery).
 
 ### 9.2 Docker Compose (Local Dev / Testing)
 
@@ -549,6 +585,12 @@ deployment.
   distro with a validated OpenSSL/BoringCrypto module), and language
   runtimes/crypto libraries must be selected for FIPS-mode compatibility
   rather than assumed compatible after the fact.
+- **Iron Bank / STIG**: container images should prefer **Iron Bank**
+  sources where available, and be built/configured toward applicable
+  **DISA STIG** baselines where feasible (§3) — both requirements are
+  "where available/feasible" rather than absolute, since not every
+  component (especially Nexus Scheduler's own custom application images)
+  will have a directly applicable Iron Bank image or STIG baseline.
 - **Operational health & metrics**: Kubernetes liveness/readiness probe
   endpoints on both the API and scheduler/worker containers, plus a
   Prometheus-compatible `/metrics` endpoint (queue depth, running job
@@ -601,6 +643,18 @@ deployment.
   single job/schedule targets one LibreChat agent call per run.
 - Dynamic, per-item-driven classification banner switching — the §6
   banner is a static, system-wide, admin-set indicator.
+- **Backup/disaster-recovery of PostgreSQL and Redis** — owned by the
+  hosting platform/admin team as an operational concern, not implemented
+  by Nexus Scheduler (§9.1).
+- **CAC/PIV smart-card authentication logic** — delegated entirely to
+  Keycloak/OIDC upstream; Nexus Scheduler never implements PKI/certificate
+  handling directly (§4).
+- **MFA for local (non-SSO) accounts** — intentionally not required; local
+  accounts are a break-glass fallback, not the primary control surface
+  (§4).
+- **Formal RMF/ATO documentation** (SSP, POA&M, etc.) — produced once
+  implementation is complete, informed by this document but not part of
+  it.
 
 ## 13. Glossary
 
@@ -629,6 +683,12 @@ deployment.
 - **PDF Report**: an on-demand-rendered PDF of a run's output or an admin
   usage summary, branded and classification-marked, delivered by email
   attachment or UI download (§2.5).
+- **Iron Bank**: DoD's centralized repository of hardened, accredited
+  container images; preferred source for common third-party components
+  where an image exists there (§3, §9.1).
+- **STIG**: a DISA Security Technical Implementation Guide — a hardening
+  baseline Nexus Scheduler's images should target where one applies
+  (§3, §10).
 
 ## 14. Open Questions
 
@@ -725,3 +785,14 @@ deployment.
   fallback if the backend lands on Python; wkhtmltopdf and fully
   programmatic libraries (e.g. ReportLab) explicitly not recommended.
   Final confirmation still tracks the backend language decision (§11).
+- 2026-07-12: Confirmed target is a **military** network. CAC/PIV is
+  handled entirely upstream by Keycloak/OIDC — Nexus Scheduler never
+  implements smart-card auth directly; local accounts are explicitly a
+  break-glass fallback and do not require MFA. Added Iron Bank as the
+  preferred image source and DISA STIG as the target hardening baseline,
+  both "where available/feasible" (§3, §9.1, §10). Confirmed PostgreSQL/
+  Redis backup and disaster recovery are the hosting platform/admin
+  team's responsibility, not implemented by the app. Noted formal RMF/
+  ATO documentation follows post-implementation, informed by but
+  separate from this document. All resolved into Non-Goals (§12) and
+  the Glossary (§13, new Iron Bank/STIG entries).
