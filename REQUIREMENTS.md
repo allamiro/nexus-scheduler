@@ -611,18 +611,42 @@ deployment.
   as the webhook allow-list above, since a renderer that fetches
   attacker- or user-influenced URLs is a classic sandbox-escape vector.
 
-## 11. Proposed Architecture (Draft)
+## 11. Proposed Architecture — CONFIRMED Tech Stack
 
-> This section captures a working technical direction; not yet finalized.
+> Scaffolding has begun against this stack. Changing any of these later
+> means reworking committed code, not just this document — treat as
+> settled unless a real blocker turns up during implementation.
 
-- **Frontend**: modern SPA (e.g., React) served as static assets.
-- **Backend API**: handles auth (OIDC + local), job/schedule CRUD, user/
-  role management, audit log access.
-- **Scheduler/Worker**: separate process/container from the API, executes
-  due jobs concurrently, calls the LibreChat API, writes results back.
-  - Redis used as the job queue / scheduling coordination layer (e.g.,
-    backing a queue library) to support concurrency and horizontal scaling
-    of workers.
+- **Language**: TypeScript everywhere (frontend, backend API, worker,
+  shared package) — one language across the stack simplifies review,
+  hiring, and STIG/dependency-scanning scope versus mixing runtimes.
+- **Monorepo**: npm workspaces (`packages/shared`, `packages/api`,
+  `packages/worker`, `packages/frontend`) — no extra monorepo tooling
+  (Nx/Turborepo) beyond what npm already provides, keeping the toolchain
+  itself easy to justify in a security review.
+- **Frontend**: React + Vite + TypeScript, MUI (Material UI) component
+  library (accessible-by-default, themeable — fits the §5 branding and §6
+  classification-banner requirements), React Router, TanStack Query for
+  data fetching, `react-oidc-context` for the OIDC login flow. Served as
+  static assets behind nginx.
+- **Backend API**: Node.js + Express + TypeScript — the most broadly
+  recognized Node web framework, easiest to justify under the "well-known
+  components only" constraint (§3). `openid-client` for OIDC/Keycloak;
+  sessions via `express-session` with a Redis store (`connect-redis`) —
+  reuses the Redis already in the stack rather than adding a new
+  component. `zod` for request validation, `pino` for structured JSON
+  logging (source data for both the Postgres audit trail and the RFC 5424
+  syslog mirror, §7.1).
+- **Scheduler/Worker**: Node.js + TypeScript + **BullMQ** (Redis-backed
+  queue) — polls Postgres for due schedules, enqueues runs, and enforces
+  the §2.1 concurrency limits and retry/backoff policy natively.
+- **ORM / migrations**: **Prisma**, schema shared via `packages/shared`
+  so the API and Worker consume one generated client and one source of
+  truth for the data model in ARCHITECTURE.md §4.
+- **PDF rendering**: **Playwright headless Chromium** (§2.5) is now the
+  **confirmed** engine (no longer conditional on backend language, since
+  Node/TypeScript is the confirmed backend) — run as an isolated internal
+  module/component with no network egress.
 - **Database**: PostgreSQL — users, roles, Teams (+ membership + Team-
   owned API keys), job definitions, schedules, run history (+ per-run
   token counts and computed cost), audit log, Projects, saved prompts
@@ -705,11 +729,6 @@ deployment.
   returns a `usage` object on chat-completions responses (expected, since
   it's OpenAI-compatible, but needs a live check against the target
   LibreChat instance before implementation locks in on it).
-- PDF engine has a recommended default (Playwright/headless Chromium,
-  §2.5) but final confirmation tracks the backend language/framework
-  decision (falls back to WeasyPrint if Python is chosen) — finalize
-  together with §11 architecture.
-
 ## 15. Change Log
 
 - 2026-07-12: Initial draft created from project kickoff requirements.
@@ -796,3 +815,8 @@ deployment.
   ATO documentation follows post-implementation, informed by but
   separate from this document. All resolved into Non-Goals (§12) and
   the Glossary (§13, new Iron Bank/STIG entries).
+- 2026-07-12: Locked in §11 as a **confirmed** tech stack (TypeScript
+  everywhere; npm workspaces monorepo; React/Vite/MUI frontend; Express
+  API; BullMQ worker; Prisma ORM; Playwright PDF rendering now confirmed,
+  no longer conditional) to begin scaffolding against. Removed the
+  now-resolved PDF-engine-vs-backend-language open question from §14.
