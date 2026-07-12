@@ -12,6 +12,8 @@ import { PromptLibraryPage } from "./pages/PromptLibraryPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { ApiKeysPage } from "./pages/ApiKeysPage";
 import { AdminPage } from "./pages/AdminPage";
+import { LoginPage } from "./pages/LoginPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +47,8 @@ function ThemedApp() {
               <Route path="/teams" element={<TeamsPage />} />
               <Route path="/api-keys" element={<ApiKeysPage />} />
               <Route path="/admin" element={<AdminPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
             </Routes>
           </AppLayout>
         </BrowserRouter>

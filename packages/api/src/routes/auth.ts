@@ -1,9 +1,19 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
+import { localLoginSchema, forgotPasswordSchema, resetPasswordSchema, hashResetToken } from "@nexus-scheduler/shared";
 import type { AppConfig } from "../config.js";
 import type { Logger } from "../logger.js";
 import { generatePkce, getOidcClient, mapKeycloakRole } from "../auth/oidc.js";
 import { prisma } from "../db.js";
 import { recordAuditEvent } from "../audit.js";
+import { issuePasswordResetEmail } from "../passwordReset.js";
+
+const BCRYPT_ROUNDS = 12;
+// A precomputed hash of a value nobody will ever type, used to keep
+// bcrypt.compare's ~100ms cost constant whether or not the email exists
+// — otherwise a non-existent-account login would return measurably
+// faster than a wrong-password one, an account-enumeration side channel.
+const DUMMY_HASH = bcrypt.hashSync("nexus-scheduler-dummy-comparison-target", BCRYPT_ROUNDS);
 
 export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   const router = Router();
@@ -140,6 +150,129 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       return;
     }
     res.json(req.session.user);
+  });
+
+  // Break-glass path (§4) — the built-in admin (BOOTSTRAP_ADMIN_EMAIL)
+  // can always log in here regardless of LOCAL_AUTH_ENABLED, since the
+  // whole point is not depending on Keycloak — or an admin's own config
+  // toggle — being available. Ordinary local accounts are blocked when
+  // the flag is off.
+  router.post("/local-login", async (req, res) => {
+    const parsed = localLoginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const isBootstrapAdmin = parsed.data.email === config.BOOTSTRAP_ADMIN_EMAIL;
+    if (!config.LOCAL_AUTH_ENABLED && !isBootstrapAdmin) {
+      res.status(503).json({ error: "local login is disabled on this deployment" });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    const hashToCompare = user?.authSource === "LOCAL" && user.passwordHash ? user.passwordHash : DUMMY_HASH;
+    const passwordOk = await bcrypt.compare(parsed.data.password, hashToCompare);
+
+    if (!user || user.authSource !== "LOCAL" || !user.active || !passwordOk) {
+      await recordAuditEvent({
+        req,
+        actorType: "USER",
+        actorId: user?.id ?? "unknown",
+        actorEmail: parsed.data.email,
+        action: "login.failure",
+        targetType: "user",
+        result: "FAILURE",
+        errorMessage: "invalid credentials",
+      });
+      res.status(401).json({ error: "invalid email or password" });
+      return;
+    }
+
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      authSource: "LOCAL",
+    };
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: user.id,
+      actorEmail: user.email,
+      action: "login.success",
+      targetType: "user",
+      targetId: user.id,
+      result: "SUCCESS",
+    });
+
+    res.json(req.session.user);
+  });
+
+  // Deliberately identical response whether or not the email exists —
+  // standard practice against account enumeration via this endpoint.
+  // Gated by LOCAL_AUTH_ENABLED: the built-in admin's password is always
+  // controlled by BOOTSTRAP_ADMIN_PASSWORD, never self-reset, so there's
+  // no legitimate use of this path when ordinary local accounts are off.
+  router.post("/local/forgot-password", async (req, res) => {
+    if (!config.LOCAL_AUTH_ENABLED) {
+      res.status(503).json({ error: "local accounts are disabled on this deployment" });
+      return;
+    }
+    const parsed = forgotPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (user && user.authSource === "LOCAL" && user.active) {
+      await issuePasswordResetEmail(config, logger, user);
+    }
+
+    res.status(204).send();
+  });
+
+  router.post("/local/reset-password", async (req, res) => {
+    if (!config.LOCAL_AUTH_ENABLED) {
+      res.status(503).json({ error: "local accounts are disabled on this deployment" });
+      return;
+    }
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const tokenHash = hashResetToken(parsed.data.token);
+    const user = await prisma.user.findFirst({
+      where: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: { gt: new Date() } },
+    });
+    if (!user) {
+      res.status(400).json({ error: "reset link is invalid or has expired" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(parsed.data.newPassword, BCRYPT_ROUNDS);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, passwordResetTokenHash: null, passwordResetExpiresAt: null },
+    });
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: user.id,
+      actorEmail: user.email,
+      action: "user.password_reset",
+      targetType: "user",
+      targetId: user.id,
+      result: "SUCCESS",
+    });
+
+    res.status(204).send();
   });
 
   return router;

@@ -13,3 +13,4 @@ export * from "./schemas/webhook.js";
 export * from "./schemas/settings.js";
 export * from "./schemas/costRate.js";
 export * from "./schemas/user.js";
+export * from "./schemas/localAuth.js";

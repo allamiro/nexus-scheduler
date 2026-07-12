@@ -82,12 +82,16 @@ externalRedis:
 # bring-your-own.
 secrets:
   # Keys expected in this Secret: SESSION_SECRET, API_KEY_ENCRYPTION_KEY,
-  # DATABASE_URL, REDIS_URL.
+  # DATABASE_URL, REDIS_URL, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD
+  # (the built-in break-glass admin, REQUIREMENTS §4 — its password is
+  # re-synced from this value on every API pod start, so rotating it here
+  # and rolling the Deployment is how an operator recovers admin access).
   appSecretName: "nexus-scheduler-app"
   # Keys expected: OIDC_CLIENT_SECRET.
   oidcSecretName: "nexus-scheduler-oidc"
-  # Keys expected: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD.
-  smtpSecretName: "nexus-scheduler-smtp"
+  # SMTP (§5) is NOT a K8s Secret — it's admin-configured at runtime via
+  # the Admin UI and stored (password encrypted) in the app's own
+  # database, the same as branding/classification-banner settings.
 
 oidc:
   issuerUrl: ""

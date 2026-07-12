@@ -181,28 +181,63 @@ function WebhookDestinationsPanel() {
   );
 }
 
+interface AdminSettings {
+  productName: string;
+  logoUrl: string | null;
+  primaryColor: string;
+  classificationBannerText: string;
+  classificationBannerBgColor: string;
+  classificationBannerTextColor: string;
+  smtpHost: string | null;
+  smtpPort: number | null;
+  smtpSecure: boolean;
+  smtpUsername: string | null;
+  smtpFromAddress: string | null;
+  smtpPasswordSet: boolean;
+}
+
 // Branding (§5) and the system-wide classification banner (§6) — one
 // settings surface, two independent concerns. The banner is never
 // derived from anything else here; it's just admin-set text/colors.
+// SMTP (§5) lives in the same singleton row, so it's edited here too.
 function SystemSettingsPanel() {
-  const { settings, refetch } = useSettings();
-  const [productName, setProductName] = useState(settings.productName);
-  const [logoUrl, setLogoUrl] = useState(settings.logoUrl ?? "");
-  const [primaryColor, setPrimaryColor] = useState(settings.primaryColor);
-  const [bannerText, setBannerText] = useState(settings.classificationBannerText);
-  const [bannerBg, setBannerBg] = useState(settings.classificationBannerBgColor);
-  const [bannerFg, setBannerFg] = useState(settings.classificationBannerTextColor);
+  const { refetch: refetchPublicSettings } = useSettings();
+  const queryClient = useQueryClient();
+  const adminSettingsQuery = useQuery({
+    queryKey: ["settings", "admin"],
+    queryFn: () => apiFetch<AdminSettings>("/api/settings/admin"),
+  });
 
-  // Settings arrive asynchronously (see SettingsContext) — seed the form
-  // once they load rather than leaving fields stuck on the placeholder.
+  const [productName, setProductName] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [primaryColor, setPrimaryColor] = useState("#1565c0");
+  const [bannerText, setBannerText] = useState("");
+  const [bannerBg, setBannerBg] = useState("");
+  const [bannerFg, setBannerFg] = useState("");
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("");
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpUsername, setSmtpUsername] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState(""); // blank = leave unchanged
+  const [smtpFromAddress, setSmtpFromAddress] = useState("");
+
+  // Settings arrive asynchronously — seed the form once they load rather
+  // than leaving fields stuck empty.
   useEffect(() => {
-    setProductName(settings.productName);
-    setLogoUrl(settings.logoUrl ?? "");
-    setPrimaryColor(settings.primaryColor);
-    setBannerText(settings.classificationBannerText);
-    setBannerBg(settings.classificationBannerBgColor);
-    setBannerFg(settings.classificationBannerTextColor);
-  }, [settings]);
+    const s = adminSettingsQuery.data;
+    if (!s) return;
+    setProductName(s.productName);
+    setLogoUrl(s.logoUrl ?? "");
+    setPrimaryColor(s.primaryColor);
+    setBannerText(s.classificationBannerText);
+    setBannerBg(s.classificationBannerBgColor);
+    setBannerFg(s.classificationBannerTextColor);
+    setSmtpHost(s.smtpHost ?? "");
+    setSmtpPort(s.smtpPort ? String(s.smtpPort) : "");
+    setSmtpSecure(s.smtpSecure);
+    setSmtpUsername(s.smtpUsername ?? "");
+    setSmtpFromAddress(s.smtpFromAddress ?? "");
+  }, [adminSettingsQuery.data]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -215,9 +250,23 @@ function SystemSettingsPanel() {
           classificationBannerText: bannerText,
           classificationBannerBgColor: bannerBg,
           classificationBannerTextColor: bannerFg,
+          smtpHost: smtpHost || null,
+          smtpPort: smtpPort ? Number(smtpPort) : null,
+          smtpSecure,
+          smtpUsername: smtpUsername || null,
+          ...(smtpPassword ? { smtpPassword } : {}),
+          smtpFromAddress: smtpFromAddress || null,
         }),
       }),
-    onSuccess: () => refetch(),
+    onSuccess: () => {
+      refetchPublicSettings();
+      void queryClient.invalidateQueries({ queryKey: ["settings", "admin"] });
+      setSmtpPassword("");
+    },
+  });
+
+  const testEmail = useMutation({
+    mutationFn: () => apiFetch("/api/settings/smtp/test", { method: "POST" }),
   });
 
   return (
@@ -232,11 +281,7 @@ function SystemSettingsPanel() {
 
       <Stack spacing={2} sx={{ maxWidth: 480 }}>
         <TextField label="Product name" value={productName} onChange={(e) => setProductName(e.target.value)} />
-        <TextField
-          label="Logo URL (optional)"
-          value={logoUrl}
-          onChange={(e) => setLogoUrl(e.target.value)}
-        />
+        <TextField label="Logo URL (optional)" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} />
         <TextField
           label="Primary color"
           type="color"
@@ -261,10 +306,52 @@ function SystemSettingsPanel() {
             fullWidth
           />
         </Stack>
+
+        <Divider />
+        <Typography variant="subtitle1">SMTP</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Used for account emails (password set/reset) and, eventually, job completion/failure
+          notifications.
+        </Typography>
+        <Stack direction="row" spacing={2}>
+          <TextField label="Host" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} fullWidth />
+          <TextField
+            label="Port"
+            type="number"
+            value={smtpPort}
+            onChange={(e) => setSmtpPort(e.target.value)}
+            sx={{ width: 120 }}
+          />
+        </Stack>
+        <FormControlLabel
+          control={<Switch checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />}
+          label="Use TLS"
+        />
+        <TextField label="Username" value={smtpUsername} onChange={(e) => setSmtpUsername(e.target.value)} />
+        <TextField
+          label="Password"
+          type="password"
+          value={smtpPassword}
+          onChange={(e) => setSmtpPassword(e.target.value)}
+          placeholder={adminSettingsQuery.data?.smtpPasswordSet ? "•••••••• (set — leave blank to keep)" : ""}
+        />
+        <TextField
+          label="From address"
+          value={smtpFromAddress}
+          onChange={(e) => setSmtpFromAddress(e.target.value)}
+        />
+
         {save.isSuccess && <Alert severity="success">Saved.</Alert>}
-        <Button variant="contained" disabled={save.isPending} onClick={() => save.mutate()} sx={{ alignSelf: "flex-start" }}>
-          Save
-        </Button>
+        {testEmail.isSuccess && <Alert severity="success">Test email sent — check your inbox.</Alert>}
+        {testEmail.isError && <Alert severity="error">Test email failed to send.</Alert>}
+        <Stack direction="row" spacing={1}>
+          <Button variant="contained" disabled={save.isPending} onClick={() => save.mutate()}>
+            Save
+          </Button>
+          <Button variant="outlined" disabled={testEmail.isPending} onClick={() => testEmail.mutate()}>
+            Send test email
+          </Button>
+        </Stack>
       </Stack>
     </Box>
   );
@@ -279,12 +366,19 @@ interface AdminUser {
   authSource: "OIDC" | "LOCAL";
 }
 
-// Role/active-status management (§4). Name/email come from OIDC and
-// aren't editable here — a user's own account can't be demoted or
-// deactivated from this screen, enforced both here and server-side.
+// Role/active-status management (§4). Name/email come from OIDC for SSO
+// users and aren't editable here — a user's own account can't be
+// demoted or deactivated from this screen, enforced both here and
+// server-side. Local accounts (§4 break-glass path) can also be
+// provisioned here — creating one sends a password-set email rather
+// than requiring a temp password to communicate out of band.
 function UserManagementPanel() {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newRole, setNewRole] = useState<AdminUser["role"]>("VIEW");
 
   const usersQuery = useQuery({
     queryKey: ["users", "admin-list"],
@@ -297,11 +391,44 @@ function UserManagementPanel() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["users", "admin-list"] }),
   });
 
+  const createUser = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/users", {
+        method: "POST",
+        body: JSON.stringify({ email: newEmail, displayName: newDisplayName || undefined, role: newRole }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["users", "admin-list"] });
+      setCreateOpen(false);
+      setNewEmail("");
+      setNewDisplayName("");
+      setNewRole("VIEW");
+    },
+  });
+
+  const sendReset = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/users/${id}/send-password-reset`, { method: "POST" }),
+  });
+
   return (
     <Box>
-      <Typography variant="h6" gutterBottom>
-        Users
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+        <Typography variant="h6">Users</Typography>
+        <Button variant="contained" size="small" onClick={() => setCreateOpen(true)}>
+          New Local User
+        </Button>
+      </Stack>
+      {createUser.isSuccess && (
+        <Alert severity="success" sx={{ mb: 1 }}>
+          Account created — a password-set email was sent (if SMTP is configured).
+        </Alert>
+      )}
+      {sendReset.isSuccess && (
+        <Alert severity="success" sx={{ mb: 1 }}>
+          Password reset email sent.
+        </Alert>
+      )}
+
       <List dense>
         {usersQuery.data?.map((u) => {
           const isSelf = u.id === currentUser?.id;
@@ -317,6 +444,11 @@ function UserManagementPanel() {
                 }
                 secondary={u.email}
               />
+              {u.authSource === "LOCAL" && (
+                <Button size="small" sx={{ mr: 2 }} disabled={sendReset.isPending} onClick={() => sendReset.mutate(u.id)}>
+                  Send password reset
+                </Button>
+              )}
               <FormControl size="small" sx={{ minWidth: 110, mr: 2 }}>
                 <Select
                   value={u.role}
@@ -343,6 +475,44 @@ function UserManagementPanel() {
         })}
         {usersQuery.data?.length === 0 && <Typography color="text.secondary">No users yet.</Typography>}
       </List>
+
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>New Local User</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField label="Email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} autoFocus fullWidth />
+            <TextField
+              label="Display name (optional)"
+              value={newDisplayName}
+              onChange={(e) => setNewDisplayName(e.target.value)}
+              fullWidth
+            />
+            <FormControl fullWidth>
+              <InputLabel id="new-user-role-label">Role</InputLabel>
+              <Select
+                labelId="new-user-role-label"
+                label="Role"
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as AdminUser["role"])}
+              >
+                <MenuItem value="ADMIN">Admin</MenuItem>
+                <MenuItem value="EDITOR">Editor</MenuItem>
+                <MenuItem value="VIEW">View</MenuItem>
+              </Select>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary">
+              No password is set here — the new user gets an email with a link to set their own,
+              same as a self-service password reset.
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button variant="contained" disabled={!newEmail || createUser.isPending} onClick={() => createUser.mutate()}>
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

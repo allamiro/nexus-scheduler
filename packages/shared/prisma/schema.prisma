@@ -36,6 +36,12 @@ model User {
   displayName  String?
   authSource   AuthSource
   passwordHash String? // set only for AuthSource.LOCAL (break-glass fallback, REQUIREMENTS §4)
+  // Single-use password-set/reset token — hashed at rest (same principle
+  // as never storing secrets in plaintext), short-lived. Doubles as the
+  // "set your initial password" mechanism for an admin-created local
+  // account (passwordHash starts null; the reset flow is how it gets set).
+  passwordResetTokenHash  String?
+  passwordResetExpiresAt  DateTime?
   role         Role       @default(VIEW)
   active       Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -397,6 +403,16 @@ model AppSettings {
   classificationBannerText       String   @default("UNCONFIGURED — SET CLASSIFICATION BANNER IN ADMIN SETTINGS")
   classificationBannerBgColor    String   @default("#b71c1c")
   classificationBannerTextColor  String   @default("#ffffff")
+  // SMTP (§5) — used for account-related email (password reset/set) and,
+  // eventually, job completion/failure notifications (§2.2). Password is
+  // AES-256-GCM encrypted at rest (same scheme as ApiKey/WebhookDestination
+  // secrets) and never returned by any API response.
+  smtpHost                       String?
+  smtpPort                       Int?
+  smtpSecure                     Boolean  @default(false)
+  smtpUsername                   String?
+  smtpEncryptedPassword          String?
+  smtpFromAddress                String?
   updatedAt                      DateTime @updatedAt
 
   @@map("app_settings")

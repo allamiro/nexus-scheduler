@@ -33,7 +33,14 @@ API_KEY_ENCRYPTION_KEY=$(random_hex 32)
 KEYCLOAK_ADMIN=admin
 KEYCLOAK_ADMIN_PASSWORD=$(random_hex 16)
 
+# Built-in break-glass admin (REQUIREMENTS §4) — this env var is the
+# ongoing source of truth for its password, re-synced on every API
+# startup, not just a one-time seed.
+BOOTSTRAP_ADMIN_EMAIL=admin@nexus-scheduler.local
+BOOTSTRAP_ADMIN_PASSWORD=$(random_hex 16)
+
 LIBRECHAT_BASE_URL=http://host.docker.internal:3080
 EOF
 
 echo "Wrote .env with freshly generated local secrets."
+echo "Built-in admin: BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD in .env"

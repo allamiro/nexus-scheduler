@@ -1,13 +1,16 @@
 import { Router } from "express";
-import { updateUserSchema } from "@nexus-scheduler/shared";
+import { updateUserSchema, createLocalUserSchema } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent } from "../audit.js";
+import { issuePasswordResetEmail } from "../passwordReset.js";
+import type { AppConfig } from "../config.js";
+import type { Logger } from "../logger.js";
 
 // Doubles as the read-only picker used when adding Team members/Project
 // ACLs (any authenticated user, capped result set) and, for admins, the
 // full user list backing role/active-status management (§4).
-export function createUsersRouter(): Router {
+export function createUsersRouter(config: AppConfig, logger: Logger): Router {
   const router = Router();
 
   router.get("/", requireAuth, async (req, res) => {
@@ -69,6 +72,80 @@ export function createUsersRouter(): Router {
     });
 
     res.json(user);
+  });
+
+  // Provisions a local account with no password set yet (§4) — the
+  // account holder sets one via the same reset-password link this
+  // immediately triggers, so there's never a temp password to
+  // communicate out of band.
+  router.post("/", requireAuth, requireAdmin, async (req, res) => {
+    if (!config.LOCAL_AUTH_ENABLED) {
+      res.status(503).json({ error: "local accounts are disabled on this deployment" });
+      return;
+    }
+    const parsed = createLocalUserSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const admin = req.session.user!;
+
+    const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (existing) {
+      res.status(409).json({ error: "a user with that email already exists" });
+      return;
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        email: parsed.data.email,
+        displayName: parsed.data.displayName,
+        authSource: "LOCAL",
+        role: parsed.data.role,
+      },
+    });
+
+    await issuePasswordResetEmail(config, logger, user);
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: admin.id,
+      actorEmail: admin.email,
+      action: "user.create",
+      targetType: "user",
+      targetId: user.id,
+      targetName: user.email,
+      result: "SUCCESS",
+      details: { authSource: "LOCAL", role: user.role },
+    });
+
+    res.status(201).json({ id: user.id, email: user.email, displayName: user.displayName, role: user.role });
+  });
+
+  router.post("/:id/send-password-reset", requireAuth, requireAdmin, async (req, res) => {
+    const admin = req.session.user!;
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user || user.authSource !== "LOCAL") {
+      res.status(400).json({ error: "not a local account" });
+      return;
+    }
+
+    await issuePasswordResetEmail(config, logger, user);
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: admin.id,
+      actorEmail: admin.email,
+      action: "user.password_reset_sent",
+      targetType: "user",
+      targetId: user.id,
+      targetName: user.email,
+      result: "SUCCESS",
+    });
+
+    res.status(204).send();
   });
 
   return router;

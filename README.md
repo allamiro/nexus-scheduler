@@ -47,7 +47,12 @@ docker compose up --build
 ```
 
 Then:
-- App (behind local nginx): http://localhost:8080
+- App (behind local nginx): http://localhost:8080 — log in as the
+  built-in admin via "Sign in with password" using `BOOTSTRAP_ADMIN_EMAIL`
+  / `BOOTSTRAP_ADMIN_PASSWORD` from `.env` (defaults to
+  `admin@nexus-scheduler.local`). From there, configure SMTP in Admin
+  Settings and point it at Mailpit (`host: mailpit`, `port: 1025`, no
+  auth/TLS) to test password-reset/account emails.
 - Mailpit (catches outbound email): http://localhost:8025
 - Keycloak admin console: http://localhost:8081 (`admin` / see `.env`)
 
@@ -230,23 +235,51 @@ though the payload's `status` field lets a receiver filter client-side.
     are now both driven by a `SettingsContext` fetched at app root,
     replacing the hardcoded values entirely.
   - **User/role management** (§4): admin-only list of every user with
-    role and active-status toggles. A user can't demote or deactivate
-    their own account (enforced both client- and server-side). Does
-    **not** include local-account creation or a local login flow —
-    OIDC-created users only; break-glass local auth is still a gap (see
-    below).
+    role and active-status toggles, plus provisioning new local accounts
+    (see below). A user can't demote or deactivate their own account
+    (enforced both client- and server-side).
   - **Cost rates** (§8): same "consumer with no producer" shape as the
     recent Prompt-variable and webhook gaps — the Worker's
     `costCalculator.ts` has looked up `CostRate` rows since the Usage &
     Reporting work, but there was no way to create one, so every run's
     cost was silently "not costed." Admin CRUD now exists (global
     default or per-agent rate, $ per million prompt/completion tokens).
+- **Local accounts, login, and SMTP** (§4/§5) — the `passwordHash`/
+  `AuthSource.LOCAL` fields had existed since the original scaffold with
+  no way to actually create or use one. Now:
+  - **Built-in break-glass admin**: `BOOTSTRAP_ADMIN_EMAIL`/
+    `BOOTSTRAP_ADMIN_PASSWORD` env vars. The password is **re-synced on
+    every API startup**, not just seeded once — the env var is the
+    ongoing source of truth (same pattern as Grafana's
+    `GF_SECURITY_ADMIN_PASSWORD`), so an operator recovers admin access
+    by changing the env var and restarting, no DB access needed. Always
+    works regardless of `LOCAL_AUTH_ENABLED` — a break-glass account
+    that can be locked out by a config toggle defeats the point.
+  - **Local login** (`POST /auth/local-login`) with a timing-safe
+    comparison — a login attempt against a nonexistent email runs
+    `bcrypt.compare` against a dummy hash rather than short-circuiting,
+    so response timing doesn't leak whether an account exists.
+  - **Self-service and admin-triggered password reset**, sharing one
+    code path (`issuePasswordResetEmail()`): a single-use, SHA-256-hashed
+    (not encrypted — it never needs to be recovered, only compared),
+    1-hour-expiry token emailed as a link. This is also how an
+    admin-provisioned local account gets its *first* password — there's
+    never a temp password to communicate out of band.
+  - **SMTP** (§5): host/port/TLS/username/password/from-address, stored
+    in the same `AppSettings` singleton as branding, password
+    AES-256-GCM encrypted and never returned by any API response (`GET
+    /api/settings/admin` reports only `smtpPasswordSet: boolean`). A
+    "send test email" button in the Admin UI proves it actually works,
+    not just that the form saved.
+  - `LOCAL_AUTH_ENABLED` now actually does something (it didn't before —
+    the flag existed but nothing checked it): it gates *ordinary* local
+    accounts (login, forgot/reset-password, admin-provisioning new
+    ones), never the built-in admin.
+  - Frontend: a `/login` page (SSO button + local login form + forgot-
+    password), a `/reset-password?token=...` page, and the Admin Users
+    panel gained "New Local User" and "Send password reset" actions.
 
 Stubbed / not yet built: PDF report generation, per-user concurrency
 limiting (only the global limit is enforced today), Prometheus metrics,
-syslog output, SMTP configuration, and local-account creation/login
-(the `passwordHash`/`AuthSource.LOCAL` fields have existed in the
-schema since the original scaffold, but there is still no way to
-create a local account or log in with one — OIDC is the only working
-login path). See REQUIREMENTS.md for the full feature set these should
-implement.
+and syslog output. See REQUIREMENTS.md for the full feature set these
+should implement.

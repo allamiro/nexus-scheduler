@@ -81,6 +81,8 @@ services:
       OIDC_ISSUER_URL: http://keycloak:8080/realms/nexus-scheduler
       OIDC_CLIENT_ID: nexus-scheduler
       OIDC_REDIRECT_URI: http://localhost:8080/auth/callback
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
       LOG_LEVEL: debug
     depends_on:
       postgres:

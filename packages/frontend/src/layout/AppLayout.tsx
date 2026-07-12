@@ -17,7 +17,7 @@ const NAV_LINKS = [
 
 // Top and bottom classification banner, always visible — REQUIREMENTS §6.
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { user, login, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { settings } = useSettings();
   const bannerConfig = {
     text: settings.classificationBannerText,
@@ -52,7 +52,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </>
           ) : (
-            <Button color="inherit" onClick={login}>
+            <Button color="inherit" component={RouterLink} to="/login">
               Log in
             </Button>
           )}

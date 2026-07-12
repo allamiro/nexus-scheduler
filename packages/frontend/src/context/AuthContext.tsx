@@ -13,6 +13,7 @@ interface AuthContextValue {
   user: SessionUser | null;
   loading: boolean;
   login: () => void;
+  localLogin: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -35,13 +36,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = `/auth/login?returnTo=${encodeURIComponent(window.location.pathname)}`;
   };
 
+  // Break-glass path (§4) — always available regardless of OIDC.
+  const localLogin = async (email: string, password: string) => {
+    const sessionUser = await apiFetch<SessionUser>("/auth/local-login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    setUser(sessionUser);
+  };
+
   const logout = async () => {
     await apiFetch("/auth/logout", { method: "POST" });
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, loading, login, localLogin, logout }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

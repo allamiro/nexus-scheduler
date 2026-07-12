@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, scryptSync } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, scryptSync } from "node:crypto";
 
 // AES-256-GCM for at-rest encryption of LibreChat API keys (REQUIREMENTS
 // §4) and other secrets stored in Postgres. AES-256-GCM is a FIPS-approved
@@ -48,4 +48,18 @@ export function generateWebhookSecret(): string {
 // recomputing this with the same shared secret (§2.2).
 export function signWebhookPayload(rawBody: string, secret: string): string {
   return createHmac("sha256", secret).update(rawBody).digest("hex");
+}
+
+// Password-reset tokens (§4/§5): high-entropy and single-use, so a plain
+// one-way hash is sufficient (and fast, unlike bcrypt/scrypt which are
+// deliberately slow for low-entropy secrets like passwords) — brute-
+// forcing a 256-bit random token via hash lookup isn't feasible. Only
+// the hash is ever stored; the raw token exists just long enough to
+// email it and immediately compare on redemption.
+export function generateResetToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+export function hashResetToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }

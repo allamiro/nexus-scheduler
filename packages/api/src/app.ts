@@ -60,11 +60,11 @@ export function createApp(config: AppConfig, logger: Logger): Express {
   app.use("/api/jobs/:jobId/schedules", createJobSchedulesRouter());
   app.use("/api/jobs", createJobsRouter());
   app.use("/api/schedules", createSchedulesRouter());
-  app.use("/api/users", createUsersRouter());
+  app.use("/api/users", createUsersRouter(config, logger));
   app.use("/api/classification-labels", createClassificationLabelsRouter());
   app.use("/api/api-keys", createApiKeysRouter(config));
   app.use("/api/webhook-destinations", createWebhookDestinationsRouter(config));
-  app.use("/api/settings", createSettingsRouter());
+  app.use("/api/settings", createSettingsRouter(config));
   app.use("/api/cost-rates", createCostRatesRouter());
 
   app.use(errorHandler(logger));

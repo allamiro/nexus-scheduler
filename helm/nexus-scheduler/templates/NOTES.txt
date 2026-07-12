@@ -6,11 +6,16 @@ exist in this namespace (none are created by this chart — REQUIREMENTS
 §9.1/§10):
 
   - {{ .Values.secrets.appSecretName }}
-      keys: SESSION_SECRET, API_KEY_ENCRYPTION_KEY, DATABASE_URL, REDIS_URL
+      keys: SESSION_SECRET, API_KEY_ENCRYPTION_KEY, DATABASE_URL, REDIS_URL,
+            BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD
+      (the built-in break-glass admin's password is re-synced from
+      BOOTSTRAP_ADMIN_PASSWORD on every API pod start — rotate it here
+      and roll the Deployment to recover admin access)
   - {{ .Values.secrets.oidcSecretName }}
       keys: OIDC_CLIENT_SECRET
-  - {{ .Values.secrets.smtpSecretName }}
-      keys: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD
+
+SMTP (§5) is not a K8s Secret — configure it from the Admin UI after
+first login; it's stored (password encrypted) in the app's own database.
 
 {{- if .Values.postgresql.enabled }}
 PostgreSQL was deployed by this chart's subchart at:

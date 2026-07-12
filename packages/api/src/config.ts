@@ -16,9 +16,22 @@ const envSchema = z.object({
   OIDC_CLIENT_SECRET: z.string().optional(),
   OIDC_REDIRECT_URI: z.string().url().optional(),
 
-  // Local-account fallback (break-glass path, §4) is enabled/disabled by
-  // whether this is set — no separate boolean flag to drift out of sync.
+  // Gates *ordinary* local accounts (login, forgot/reset-password,
+  // admin-provisioning new ones) — §4. Does NOT gate the built-in
+  // BOOTSTRAP_ADMIN_EMAIL account below: that one has to keep working
+  // even if an operator turns this off, or there'd be no way back in
+  // without DB access, defeating the point of a break-glass account.
   LOCAL_AUTH_ENABLED: z.coerce.boolean().default(true),
+
+  // Built-in break-glass admin account. The env var is the *ongoing*
+  // source of truth, not just a one-time seed: its password is
+  // re-synced to this value on every startup (same pattern as e.g.
+  // Grafana's GF_SECURITY_ADMIN_PASSWORD), so access can always be
+  // recovered by changing the env var and restarting, without needing
+  // DB access. Optional — if unset, no built-in admin is created/synced,
+  // for deployments that intend to rely on OIDC exclusively.
+  BOOTSTRAP_ADMIN_EMAIL: z.string().email().default("admin@nexus-scheduler.local"),
+  BOOTSTRAP_ADMIN_PASSWORD: z.string().min(12).optional(),
 
   // Symmetric key used to encrypt LibreChat API keys at rest (§4).
   // In production this comes from a K8s Secret, never a default value.
