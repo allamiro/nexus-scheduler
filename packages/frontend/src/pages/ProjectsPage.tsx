@@ -25,6 +25,7 @@ import {
 import { apiFetch } from "../api/client";
 import { PromptDetailDialog } from "../components/PromptDetailDialog";
 import { ScheduleManagerDialog } from "../components/ScheduleManagerDialog";
+import { VariableEditor, type PromptVariableDraft } from "../components/VariableEditor";
 
 interface ClassificationLabel {
   id: string;
@@ -249,6 +250,7 @@ function ProjectPromptsPanel({ projectId, canEdit }: { projectId: string; canEdi
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [content, setContent] = useState("");
+  const [variables, setVariables] = useState<PromptVariableDraft[]>([]);
 
   const promptsQuery = useQuery({
     queryKey: ["projects", projectId, "prompts"],
@@ -267,7 +269,9 @@ function ProjectPromptsPanel({ projectId, canEdit }: { projectId: string; canEdi
             .map((t) => t.trim())
             .filter(Boolean),
           content,
-          variables: [],
+          variables: variables
+            .filter((v) => v.name)
+            .map((v) => ({ name: v.name, type: v.type, defaultValue: v.defaultValue || undefined })),
         }),
       }),
     onSuccess: () => {
@@ -277,6 +281,7 @@ function ProjectPromptsPanel({ projectId, canEdit }: { projectId: string; canEdi
       setDescription("");
       setTags("");
       setContent("");
+      setVariables([]);
     },
   });
 
@@ -333,6 +338,7 @@ function ProjectPromptsPanel({ projectId, canEdit }: { projectId: string; canEdi
               minRows={4}
               fullWidth
             />
+            <VariableEditor variables={variables} onChange={setVariables} />
           </Stack>
         </DialogContent>
         <DialogActions>

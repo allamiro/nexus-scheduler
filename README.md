@@ -147,34 +147,43 @@ build in this environment):
   recomputes `nextFireAt` on (re-)approval; pause/resume are separate
   endpoints so an operational toggle never accidentally re-triggers
   approval.
-- Frontend, fully wired end to end: create an API key → create a
-  Project → add a Prompt → create a Job against that Prompt and key →
-  create a Schedule for that Job (one-time or recurring, with a live
-  interval-picker UI) → see it in the cross-Project **Approvals** queue
-  if its Project is shared → approve/reject. Plus the Teams/Projects
-  pages (create, browse, manage membership, manage sharing), a Prompts
-  panel inside each Project's detail view, and a top-level Prompt
-  Library page for org-wide search/tag/favorites discovery.
-
-Known simplification: the one-time schedule picker uses an HTML
-`datetime-local` input, which is always interpreted in the browser's
-local time zone — the schedule's separate `timezone` field is honored
-for display and for recurring-schedule math, but not (yet) for
-re-interpreting a one-time `runAt` in a zone other than the browser's.
-Correct for the common case (scheduling in your own time zone); a
-dedicated cross-zone one-time picker is a follow-up if that turns out
-to matter.
-
 - **Admin: classification taxonomy** (§6): list/create labels (text,
   abbreviation, badge colors, sort order, default-for-new-Projects) —
   the UI for the classification-labels backend that already existed but
   had no way to actually populate it.
+- **Prompt variable substitution, end to end** (§2.3): declaring
+  `{{variable}}` placeholders (name/type/default) is now a real UI —
+  `VariableEditor` on both "New Prompt" and "Save as new version," not
+  just a zod schema nothing ever populated. More importantly, a
+  **per-schedule value override** now actually exists: `Schedule` grew a
+  `variableValues` column (it had nowhere to store this before), the
+  create-Schedule form shows an editable input per variable declared on
+  the *effective* prompt version (the pinned one, or latest — recomputed
+  live as you change the pin selector), pre-filled with its default, and
+  the Worker's `renderPromptTemplate()` now takes those overrides as a
+  third precedence tier above declared defaults (built-ins still always
+  win). This closes a gap the Worker code had an explicit `TODO` for.
+- Frontend, fully wired end to end: create an API key → create a
+  Project → add a Prompt (with declared variables) → create a Job
+  against that Prompt and key → create a Schedule for that Job
+  (one-time or recurring, with a live interval-picker UI and per-run
+  variable value inputs) → see it in the cross-Project **Approvals**
+  queue if its Project is shared → approve/reject. Plus the
+  Teams/Projects pages (create, browse, manage membership, manage
+  sharing), a Prompts panel inside each Project's detail view, and a
+  top-level Prompt Library page for org-wide search/tag/favorites
+  discovery.
 
-Stubbed / not yet built: prompt **variable substitution UI** (the
-`{{variable}}` declaration form — the worker already resolves them at
-run time, §2.3, but there's no UI to declare non-default values on a
-schedule yet), PDF report generation, webhook delivery, per-user
-concurrency limiting (only the global limit is enforced today),
-Prometheus metrics, syslog output, and the rest of the admin UI (user/
-role management, branding, cost rates, SMTP config). See REQUIREMENTS.md
-for the full feature set these should implement.
+Known simplification: the one-time schedule picker uses an HTML
+`datetime-local` input, always interpreted in the browser's local time
+zone — the schedule's separate `timezone` field is honored for display
+and for recurring-schedule math, but not (yet) for re-interpreting a
+one-time `runAt` in a zone other than the browser's. Correct for the
+common case; a dedicated cross-zone one-time picker is a follow-up if
+that turns out to matter.
+
+Stubbed / not yet built: PDF report generation, webhook delivery,
+per-user concurrency limiting (only the global limit is enforced
+today), Prometheus metrics, syslog output, and the rest of the admin UI
+(user/role management, branding, cost rates, SMTP config). See
+REQUIREMENTS.md for the full feature set these should implement.

@@ -26,6 +26,11 @@ export const intervalConfigSchema = z.discriminatedUnion("kind", [
 
 export type IntervalConfig = z.infer<typeof intervalConfigSchema>;
 
+// A schedule's overrides of its prompt's declared {{variable}} defaults
+// (REQUIREMENTS §2.3) — a flat string map, keyed by variable name.
+export const variableValuesSchema = z.record(z.string(), z.string());
+export type VariableValues = z.infer<typeof variableValuesSchema>;
+
 // jobId comes from the route (POST /api/jobs/:jobId/schedules), not the
 // body — same convention as createPromptSchema/createJobSchema.
 export const createScheduleSchema = z
@@ -38,6 +43,7 @@ export const createScheduleSchema = z
     // required when versionPinMode === "PINNED" (§2.3: the schedule
     // owner's per-schedule choice of which prompt version to run).
     pinnedPromptVersionId: z.string().uuid().optional(),
+    variableValues: variableValuesSchema.default({}),
   })
   .refine((v) => v.type !== "ONE_TIME" || !!v.runAt, {
     message: "runAt is required for a one-time schedule",
@@ -61,6 +67,7 @@ export const updateScheduleSchema = z
     timezone: z.string().min(1).optional(),
     versionPinMode: z.enum(["PINNED", "LATEST"]).optional(),
     pinnedPromptVersionId: z.string().uuid().nullable().optional(),
+    variableValues: variableValuesSchema.optional(),
   })
   .refine((v) => v.versionPinMode !== "PINNED" || !!v.pinnedPromptVersionId, {
     message: "pinnedPromptVersionId is required when versionPinMode is PINNED",

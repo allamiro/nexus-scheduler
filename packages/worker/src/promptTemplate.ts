@@ -1,14 +1,12 @@
 // Resolves {{variable}} placeholders in a saved prompt at execution time
-// (REQUIREMENTS.md §2.3). Built-ins are always available; declared
-// variables fall back to their default value.
-//
-// TODO: per-run/per-schedule variable *overrides* (a user filling in a
-// value when creating a schedule) aren't modeled yet — this only
-// resolves built-ins and declared defaults.
+// (REQUIREMENTS.md §2.3). Precedence, highest first: a per-schedule
+// override value, then the variable's declared default, then built-ins
+// (built-ins aren't overridable — a schedule can't redefine {{run_id}}).
 export function renderPromptTemplate(
   content: string,
   context: { scheduleName?: string; runId: string },
   declaredVariables: Array<{ name: string; defaultValue?: string }>,
+  variableValues: Record<string, string> = {},
 ): string {
   const now = new Date();
   const builtins: Record<string, string> = {
@@ -18,12 +16,16 @@ export function renderPromptTemplate(
     run_id: context.runId,
   };
 
-  const values: Record<string, string> = { ...builtins };
+  const values: Record<string, string> = {};
   for (const variable of declaredVariables) {
-    if (!(variable.name in values)) {
-      values[variable.name] = variable.defaultValue ?? "";
+    values[variable.name] = variable.defaultValue ?? "";
+  }
+  for (const [name, value] of Object.entries(variableValues)) {
+    if (name in values) {
+      values[name] = value;
     }
   }
+  Object.assign(values, builtins); // built-ins always win, applied last
 
   return content.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (match, name: string) => {
     return name in values ? values[name]! : match;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -21,6 +21,7 @@ import {
   Typography,
 } from "@mui/material";
 import { apiFetch } from "../api/client";
+import type { PromptVariableDraft } from "./VariableEditor";
 
 interface Schedule {
   id: string;
@@ -36,10 +37,11 @@ interface Schedule {
 interface PromptVersion {
   id: string;
   versionNumber: number;
+  variables: PromptVariableDraft[];
 }
 
 interface PromptDetail {
-  versions: PromptVersion[];
+  versions: PromptVersion[]; // ordered newest first (§2.3)
 }
 
 const DEFAULT_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -68,16 +70,34 @@ export function ScheduleManagerDialog({
   const [timezone, setTimezone] = useState(DEFAULT_TZ);
   const [versionPinMode, setVersionPinMode] = useState<"PINNED" | "LATEST">("LATEST");
   const [pinnedPromptVersionId, setPinnedPromptVersionId] = useState("");
+  const [variableValues, setVariableValues] = useState<Record<string, string>>({});
 
   const schedulesQuery = useQuery({
     queryKey: ["jobs", jobId, "schedules"],
     queryFn: () => apiFetch<Schedule[]>(`/api/jobs/${jobId}/schedules`),
   });
+  // Always fetched (not just when PINNED) — needed to know which
+  // {{variable}}s the *latest* version declares too, so the create form
+  // can offer value overrides regardless of pin mode (§2.3).
   const promptQuery = useQuery({
     queryKey: ["prompts", promptId],
     queryFn: () => apiFetch<PromptDetail>(`/api/prompts/${promptId}`),
-    enabled: versionPinMode === "PINNED",
   });
+
+  const effectiveVersion =
+    versionPinMode === "PINNED"
+      ? promptQuery.data?.versions.find((v) => v.id === pinnedPromptVersionId)
+      : promptQuery.data?.versions[0];
+  const effectiveVariables = effectiveVersion?.variables ?? [];
+
+  // Reset the value inputs to the newly-effective version's declared
+  // defaults whenever which version is "effective" changes.
+  useEffect(() => {
+    setVariableValues(
+      Object.fromEntries(effectiveVariables.map((v) => [v.name, v.defaultValue ?? ""])),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveVersion?.id]);
 
   const createSchedule = useMutation({
     mutationFn: () => {
@@ -99,6 +119,7 @@ export function ScheduleManagerDialog({
           timezone,
           versionPinMode,
           pinnedPromptVersionId: versionPinMode === "PINNED" ? pinnedPromptVersionId : undefined,
+          variableValues,
         }),
       });
     },
@@ -319,6 +340,25 @@ export function ScheduleManagerDialog({
                     ))}
                   </Select>
                 </FormControl>
+              )}
+
+              {effectiveVariables.length > 0 && (
+                <Stack spacing={1}>
+                  <Typography variant="subtitle2">Variable values</Typography>
+                  {effectiveVariables.map((variable) => (
+                    <TextField
+                      key={variable.name}
+                      label={variable.name}
+                      type={variable.type === "number" ? "number" : variable.type === "date" ? "date" : "text"}
+                      value={variableValues[variable.name] ?? ""}
+                      onChange={(e) =>
+                        setVariableValues((prev) => ({ ...prev, [variable.name]: e.target.value }))
+                      }
+                      InputLabelProps={variable.type === "date" ? { shrink: true } : undefined}
+                      fullWidth
+                    />
+                  ))}
+                </Stack>
               )}
 
               {createSchedule.isError && <Alert severity="error">Could not create schedule.</Alert>}

@@ -19,11 +19,13 @@ import {
 import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
 import { apiFetch } from "../api/client";
+import { VariableEditor, type PromptVariableDraft } from "./VariableEditor";
 
 interface PromptVersion {
   id: string;
   versionNumber: number;
   content: string;
+  variables: PromptVariableDraft[];
   createdAt: string;
   createdBy: { displayName: string | null; email: string };
 }
@@ -45,6 +47,7 @@ interface PromptDetail {
 export function PromptDetailDialog({ promptId, onClose }: { promptId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [newVersionContent, setNewVersionContent] = useState("");
+  const [newVersionVariables, setNewVersionVariables] = useState<PromptVariableDraft[]>([]);
   const [addingVersion, setAddingVersion] = useState(false);
 
   const promptQuery = useQuery({
@@ -67,7 +70,12 @@ export function PromptDetailDialog({ promptId, onClose }: { promptId: string; on
     mutationFn: () =>
       apiFetch(`/api/prompts/${promptId}/versions`, {
         method: "POST",
-        body: JSON.stringify({ content: newVersionContent, variables: [] }),
+        body: JSON.stringify({
+          content: newVersionContent,
+          variables: newVersionVariables
+            .filter((v) => v.name)
+            .map((v) => ({ name: v.name, type: v.type, defaultValue: v.defaultValue || undefined })),
+        }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["prompts", promptId] });
@@ -119,7 +127,14 @@ export function PromptDetailDialog({ promptId, onClose }: { promptId: string; on
               </Box>
 
               {canEdit && !addingVersion && (
-                <Button onClick={() => setAddingVersion(true)} sx={{ alignSelf: "flex-start" }}>
+                <Button
+                  onClick={() => {
+                    setNewVersionContent(latest?.content ?? "");
+                    setNewVersionVariables(latest?.variables ?? []);
+                    setAddingVersion(true);
+                  }}
+                  sx={{ alignSelf: "flex-start" }}
+                >
                   Save as new version
                 </Button>
               )}
@@ -133,6 +148,7 @@ export function PromptDetailDialog({ promptId, onClose }: { promptId: string; on
                     onChange={(e) => setNewVersionContent(e.target.value)}
                     fullWidth
                   />
+                  <VariableEditor variables={newVersionVariables} onChange={setNewVersionVariables} />
                   <Stack direction="row" spacing={1}>
                     <Button
                       variant="contained"

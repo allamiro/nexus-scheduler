@@ -82,6 +82,7 @@ export function createJobSchedulesRouter(): Router {
         timezone: parsed.data.timezone,
         versionPinMode: parsed.data.versionPinMode,
         pinnedPromptVersionId: parsed.data.pinnedPromptVersionId,
+        variableValues: parsed.data.variableValues,
         approvalStatus: needsApproval ? "PENDING" : "APPROVED",
         nextFireAt,
         createdById: user.id,

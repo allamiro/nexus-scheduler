@@ -284,6 +284,10 @@ model Schedule {
   versionPinMode       VersionPinMode @default(LATEST)
   pinnedPromptVersionId String?
   pinnedPromptVersion   PromptVersion? @relation(fields: [pinnedPromptVersionId], references: [id])
+  // Per-schedule overrides of the prompt's declared {{variable}}
+  // defaults (REQUIREMENTS §2.3: "filled in when a schedule is created
+  // ... and can be edited later"). Record<variableName, value>.
+  variableValues        Json?
   createdById           String
   createdBy             User           @relation(fields: [createdById], references: [id])
   createdAt             DateTime       @default(now())

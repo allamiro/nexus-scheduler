@@ -51,10 +51,12 @@ async function processRun(bullJob: BullJob<RunJobData>, config: WorkerConfig, lo
     const declaredVariables = Array.isArray(promptVersion.variables)
       ? (promptVersion.variables as Array<{ name: string; defaultValue?: string }>)
       : [];
+    const variableValues = (run.schedule?.variableValues as Record<string, string> | null) ?? {};
     const renderedPrompt = renderPromptTemplate(
       promptVersion.content,
-      { scheduleName: undefined, runId },
+      { scheduleName: run.job.name, runId },
       declaredVariables,
+      variableValues,
     );
 
     const apiKey = decryptSecret(run.job.apiKey.encryptedKey, config.API_KEY_ENCRYPTION_KEY);
