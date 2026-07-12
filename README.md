@@ -93,6 +93,21 @@ default. Edit that one line to `http://librechat:3080` by hand (re-running
 the script will still create the new `docker/librechat/.env` alongside
 it, since that file didn't exist before).
 
+**Postgres "password authentication failed"**: Postgres only sets its
+user's password when its data directory is first initialized — if the
+`postgres-data` volume was ever created against an *older* `.env` (e.g.
+you regenerated or hand-edited `POSTGRES_PASSWORD` at some point), it
+keeps that original password forever, regardless of what `.env` says on
+later starts. `migrate` is usually the first thing to actually hit this,
+since it's the first service to try authenticating. Fix by wiping the
+stale volume so Postgres reinitializes from the current `.env` (this
+also resets Redis and LibreChat's Mongo — fine for this dev/test stack,
+not something to do against a deployment with real data):
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 ### Running a single package against the Compose infra
 
 ```bash
