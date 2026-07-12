@@ -103,12 +103,27 @@ build in this environment):
   next-fire-time computation) and a BullMQ run processor with
   retry/backoff, cost calculation, and the LibreChat Agents API adapter
 - A `jobs` CRUD slice proving the Express + Prisma + zod + audit pattern
+- **Teams** (§2.3): CRUD, nested hierarchy, membership management,
+  including the "membership in a parent Team is inherited by every
+  descendant Team" rule
+- **Projects & ACLs** (§2.3): CRUD, classification-label tagging, and
+  sharing by individual user / Team / org-wide with READ or EDIT access
+  — `getProjectAccess()`/`listAccessibleProjects()` in
+  `packages/api/src/access.ts` are the single source of truth for who
+  can see/edit what, used by both the list endpoint and the
+  `requireProjectAccess` route middleware. Sharing config itself
+  (granting/revoking ACLs) is deliberately owner-only, per §2.3's "a
+  Project owner can share a Project" — EDIT collaborators can change
+  content but not decide who else gets in.
 - Frontend shell: routing, MUI theme, the classification banner
-  component, an OIDC-aware auth context
+  component, an OIDC-aware auth context, and working Teams/Projects
+  pages (create, browse, manage membership, manage sharing)
 
-Stubbed / not yet built: Projects/Teams/ACLs, Prompt Library, prompt
-versioning UI, schedule approval workflow, PDF report generation,
-webhook delivery, per-user concurrency limiting (only the global limit
-is enforced today), Prometheus metrics, syslog output, most of the
-admin UI. See REQUIREMENTS.md for the full feature set these should
+Stubbed / not yet built: Prompt Library (saved prompts, versioning,
+tags/search/favorites — Projects exist now but don't yet contain
+prompts), schedule approval workflow, PDF report generation, webhook
+delivery, per-user concurrency limiting (only the global limit is
+enforced today), Prometheus metrics, syslog output, most of the admin
+UI (user management, branding, classification-taxonomy editing, cost
+rates, SMTP config). See REQUIREMENTS.md for the full feature set these should
 implement.

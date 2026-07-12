@@ -1,0 +1,359 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Autocomplete,
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControl,
+  InputLabel,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { apiFetch } from "../api/client";
+
+interface ClassificationLabel {
+  id: string;
+  text: string;
+  badgeBgColor: string;
+  badgeTextColor: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  visibility: "PRIVATE" | "SHARED";
+  classificationLabel: ClassificationLabel | null;
+  owner: { id: string; email: string; displayName: string | null };
+}
+
+interface ProjectDetail extends Project {
+  effectiveAccess: "OWNER" | "EDIT" | "READ";
+}
+
+interface Team {
+  id: string;
+  name: string;
+}
+
+interface UserSummary {
+  id: string;
+  email: string;
+  displayName: string | null;
+}
+
+interface ProjectAcl {
+  id: string;
+  granteeType: "USER" | "TEAM" | "ORG";
+  granteeUserId: string | null;
+  granteeTeamId: string | null;
+  accessLevel: "READ" | "EDIT";
+}
+
+function ClassificationBadge({ label }: { label: ClassificationLabel | null }) {
+  if (!label) return null;
+  return (
+    <Chip
+      size="small"
+      label={label.text}
+      sx={{ backgroundColor: label.badgeBgColor, color: label.badgeTextColor, fontWeight: 700 }}
+    />
+  );
+}
+
+export function ProjectsPage() {
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newLabelId, setNewLabelId] = useState("");
+
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => apiFetch<Project[]>("/api/projects"),
+  });
+  const labelsQuery = useQuery({
+    queryKey: ["classification-labels"],
+    queryFn: () => apiFetch<ClassificationLabel[]>("/api/classification-labels"),
+  });
+
+  const createProject = useMutation({
+    mutationFn: () =>
+      apiFetch<Project>("/api/projects", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newName,
+          description: newDescription || undefined,
+          classificationLabelId: newLabelId || undefined,
+        }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setCreateOpen(false);
+      setNewName("");
+      setNewDescription("");
+      setNewLabelId("");
+    },
+  });
+
+  return (
+    <Box sx={{ display: "flex", gap: 4 }}>
+      <Box sx={{ minWidth: 360 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="h4">Projects</Typography>
+          <Button variant="contained" onClick={() => setCreateOpen(true)}>
+            New Project
+          </Button>
+        </Stack>
+        <List>
+          {projectsQuery.data?.map((project) => (
+            <ListItem key={project.id} disablePadding>
+              <ListItemButton
+                selected={project.id === selectedProjectId}
+                onClick={() => setSelectedProjectId(project.id)}
+              >
+                <ListItemText
+                  primary={
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <span>{project.name}</span>
+                      <ClassificationBadge label={project.classificationLabel} />
+                    </Stack>
+                  }
+                  secondary={`Owner: ${project.owner.displayName ?? project.owner.email} · ${project.visibility}`}
+                />
+              </ListItemButton>
+            </ListItem>
+          ))}
+          {projectsQuery.data?.length === 0 && (
+            <Typography color="text.secondary">No Projects you can see yet.</Typography>
+          )}
+        </List>
+      </Box>
+
+      <Box sx={{ flex: 1 }}>
+        {selectedProjectId ? (
+          <ProjectDetailPanel projectId={selectedProjectId} />
+        ) : (
+          <Typography color="text.secondary">Select a Project to view details.</Typography>
+        )}
+      </Box>
+
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>New Project</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField label="Name" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus fullWidth />
+            <TextField
+              label="Description"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              multiline
+              minRows={2}
+              fullWidth
+            />
+            <FormControl fullWidth>
+              <InputLabel id="new-project-label">Classification</InputLabel>
+              <Select
+                labelId="new-project-label"
+                label="Classification"
+                value={newLabelId}
+                onChange={(e) => setNewLabelId(e.target.value)}
+              >
+                <MenuItem value="">
+                  <em>Deployment default</em>
+                </MenuItem>
+                {labelsQuery.data?.map((label) => (
+                  <MenuItem key={label.id} value={label.id}>
+                    {label.text}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button variant="contained" disabled={!newName || createProject.isPending} onClick={() => createProject.mutate()}>
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}
+
+function ProjectDetailPanel({ projectId }: { projectId: string }) {
+  const detailQuery = useQuery({
+    queryKey: ["projects", projectId],
+    queryFn: () => apiFetch<ProjectDetail>(`/api/projects/${projectId}`),
+  });
+
+  if (!detailQuery.data) {
+    return null;
+  }
+  const project = detailQuery.data;
+
+  return (
+    <Stack spacing={2}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Typography variant="h5">{project.name}</Typography>
+        <ClassificationBadge label={project.classificationLabel} />
+      </Stack>
+      {project.description && <Typography color="text.secondary">{project.description}</Typography>}
+      <Typography variant="body2">Your access: {project.effectiveAccess}</Typography>
+
+      {project.effectiveAccess === "OWNER" && (
+        <>
+          <Divider />
+          <ProjectSharingPanel projectId={project.id} />
+        </>
+      )}
+    </Stack>
+  );
+}
+
+// Sharing config is owner-only to view/edit (REQUIREMENTS §2.3 — "a
+// Project owner can share a Project"), matching the API's OWNER-gated
+// /acl endpoints.
+function ProjectSharingPanel({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [granteeType, setGranteeType] = useState<"USER" | "TEAM" | "ORG">("USER");
+  const [granteeUserId, setGranteeUserId] = useState<string | null>(null);
+  const [granteeTeamId, setGranteeTeamId] = useState<string | null>(null);
+  const [accessLevel, setAccessLevel] = useState<"READ" | "EDIT">("READ");
+  const [userSearch, setUserSearch] = useState("");
+
+  const aclQuery = useQuery({
+    queryKey: ["projects", projectId, "acl"],
+    queryFn: () => apiFetch<ProjectAcl[]>(`/api/projects/${projectId}/acl`),
+  });
+  const teamsQuery = useQuery({ queryKey: ["teams"], queryFn: () => apiFetch<Team[]>("/api/teams") });
+  const usersQuery = useQuery({
+    queryKey: ["users", userSearch],
+    queryFn: () => apiFetch<UserSummary[]>(`/api/users?search=${encodeURIComponent(userSearch)}`),
+    enabled: granteeType === "USER" && userSearch.length > 1,
+  });
+
+  const grant = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/projects/${projectId}/acl`, {
+        method: "POST",
+        body: JSON.stringify({
+          granteeType,
+          granteeUserId: granteeType === "USER" ? granteeUserId ?? undefined : undefined,
+          granteeTeamId: granteeType === "TEAM" ? granteeTeamId ?? undefined : undefined,
+          accessLevel,
+        }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["projects", projectId, "acl"] });
+      setGranteeUserId(null);
+      setGranteeTeamId(null);
+    },
+  });
+
+  const revoke = useMutation({
+    mutationFn: (aclId: string) => apiFetch(`/api/projects/${projectId}/acl/${aclId}`, { method: "DELETE" }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["projects", projectId, "acl"] }),
+  });
+
+  const canGrant =
+    granteeType === "ORG" || (granteeType === "USER" && granteeUserId) || (granteeType === "TEAM" && granteeTeamId);
+
+  return (
+    <Stack spacing={2}>
+      <Typography variant="subtitle1">Sharing</Typography>
+
+      <List dense>
+        {aclQuery.data?.map((acl) => (
+          <ListItem
+            key={acl.id}
+            secondaryAction={
+              <Button size="small" color="error" onClick={() => revoke.mutate(acl.id)}>
+                Revoke
+              </Button>
+            }
+          >
+            <ListItemText
+              primary={`${acl.granteeType}${acl.granteeType === "ORG" ? " (everyone)" : ""} — ${acl.accessLevel}`}
+            />
+          </ListItem>
+        ))}
+        {aclQuery.data?.length === 0 && (
+          <Typography color="text.secondary">Private — not shared with anyone yet.</Typography>
+        )}
+      </List>
+
+      <Divider />
+
+      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel id="grantee-type-label">Share with</InputLabel>
+          <Select
+            labelId="grantee-type-label"
+            label="Share with"
+            value={granteeType}
+            onChange={(e) => setGranteeType(e.target.value as typeof granteeType)}
+          >
+            <MenuItem value="USER">A user</MenuItem>
+            <MenuItem value="TEAM">A Team</MenuItem>
+            <MenuItem value="ORG">Everyone (org-wide)</MenuItem>
+          </Select>
+        </FormControl>
+
+        {granteeType === "USER" && (
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 240 }}
+            options={usersQuery.data ?? []}
+            getOptionLabel={(u) => `${u.displayName ?? u.email} (${u.email})`}
+            onInputChange={(_e, value) => setUserSearch(value)}
+            onChange={(_e, value) => setGranteeUserId(value?.id ?? null)}
+            renderInput={(params) => <TextField {...params} label="User" />}
+          />
+        )}
+        {granteeType === "TEAM" && (
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 240 }}
+            options={teamsQuery.data ?? []}
+            getOptionLabel={(t) => t.name}
+            onChange={(_e, value) => setGranteeTeamId(value?.id ?? null)}
+            renderInput={(params) => <TextField {...params} label="Team" />}
+          />
+        )}
+
+        <FormControl size="small" sx={{ minWidth: 100 }}>
+          <InputLabel id="access-level-label">Access</InputLabel>
+          <Select
+            labelId="access-level-label"
+            label="Access"
+            value={accessLevel}
+            onChange={(e) => setAccessLevel(e.target.value as typeof accessLevel)}
+          >
+            <MenuItem value="READ">Read</MenuItem>
+            <MenuItem value="EDIT">Edit</MenuItem>
+          </Select>
+        </FormControl>
+
+        <Button variant="contained" disabled={!canGrant || grant.isPending} onClick={() => grant.mutate()}>
+          Share
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}

@@ -5,3 +5,5 @@ export * from "./scheduling.js";
 export * from "./schemas/audit.js";
 export * from "./schemas/schedule.js";
 export * from "./schemas/job.js";
+export * from "./schemas/team.js";
+export * from "./schemas/project.js";

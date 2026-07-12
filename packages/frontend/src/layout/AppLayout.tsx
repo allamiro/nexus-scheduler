@@ -9,7 +9,8 @@ const NAV_LINKS = [
   { to: "/", label: "Dashboard" },
   { to: "/jobs", label: "Jobs" },
   { to: "/schedules", label: "Schedules" },
-  { to: "/projects", label: "Prompt Library" },
+  { to: "/projects", label: "Projects" },
+  { to: "/teams", label: "Teams" },
   { to: "/admin", label: "Admin" },
 ];
 

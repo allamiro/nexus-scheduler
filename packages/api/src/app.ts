@@ -10,6 +10,10 @@ import type { Logger } from "./logger.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createJobsRouter } from "./routes/jobs.js";
 import { createAuthRouter } from "./routes/auth.js";
+import { createTeamsRouter } from "./routes/teams.js";
+import { createProjectsRouter } from "./routes/projects.js";
+import { createUsersRouter } from "./routes/users.js";
+import { createClassificationLabelsRouter } from "./routes/classificationLabels.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 export function createApp(config: AppConfig, logger: Logger): Express {
@@ -43,6 +47,10 @@ export function createApp(config: AppConfig, logger: Logger): Express {
   app.use(createHealthRouter());
   app.use("/auth", createAuthRouter(config, logger));
   app.use("/api/jobs", createJobsRouter());
+  app.use("/api/teams", createTeamsRouter());
+  app.use("/api/projects", createProjectsRouter());
+  app.use("/api/users", createUsersRouter());
+  app.use("/api/classification-labels", createClassificationLabelsRouter());
 
   app.use(errorHandler(logger));
 

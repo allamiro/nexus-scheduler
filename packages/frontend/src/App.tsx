@@ -8,7 +8,8 @@ import { AppLayout } from "./layout/AppLayout";
 import { DashboardPage } from "./pages/DashboardPage";
 import { JobsPage } from "./pages/JobsPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
-import { PromptLibraryPage } from "./pages/PromptLibraryPage";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { TeamsPage } from "./pages/TeamsPage";
 import { AdminPage } from "./pages/AdminPage";
 
 const queryClient = new QueryClient();
@@ -26,7 +27,8 @@ export function App() {
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/schedules" element={<SchedulesPage />} />
-                <Route path="/projects" element={<PromptLibraryPage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/teams" element={<TeamsPage />} />
                 <Route path="/admin" element={<AdminPage />} />
               </Routes>
             </AppLayout>
