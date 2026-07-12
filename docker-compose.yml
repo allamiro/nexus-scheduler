@@ -128,18 +128,22 @@ services:
       SEARCH: "false"
       # Claude as the provider for local testing — set ANTHROPIC_API_KEY
       # in this repo's own root .env (not docker/librechat/.env) so
-      # there's one place to drop a real key. ENDPOINTS=anthropic keeps
-      # LibreChat's UI to just that one provider rather than showing a
-      # dropdown full of other unconfigured options nobody asked for.
-      # Compose's injected environment here always wins over whatever's
-      # in the bind-mounted docker/librechat/.env for the same key, so
-      # that file no longer carries its own ANTHROPIC_API_KEY line.
+      # there's one place to drop a real key. Compose's injected
+      # environment here always wins over whatever's in the bind-mounted
+      # docker/librechat/.env for the same key, so that file no longer
+      # carries its own ANTHROPIC_API_KEY line.
+      #
+      # Deliberately NOT setting ENDPOINTS to restrict this to just
+      # "anthropic": LibreChat's `agents` feature is itself one of the
+      # values in that same endpoint enum, so doing that hid the entire
+      # Agent Builder along with the providers it wasn't meant to
+      # filter. Leaving ENDPOINTS unset means LibreChat shows its own
+      # default set instead — a few more entries in the dropdown than
+      # originally intended, but Agent creation actually works.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ENDPOINTS: anthropic
       # Custom (non-built-in) endpoints — the local Ollama/phi4-mini
       # instance above — are defined in the bind-mounted librechat.yaml
-      # below, not via ENDPOINTS (that only filters built-in providers
-      # like the anthropic one).
+      # below.
       CONFIG_PATH: /app/librechat.yaml
     volumes:
       - type: bind
