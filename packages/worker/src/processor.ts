@@ -167,10 +167,20 @@ async function processRun(
       }
       const outputText = [toolCallNote, responseChoice?.message.content].filter(Boolean).join("\n\n");
       const tokenUsage = extractTokenUsage(response.usage);
-      if (!tokenUsage && response.usage) {
+      if (!tokenUsage) {
+        // Two distinct cases collapsed into one null return by design
+        // (extractTokenUsage), but they need different log messages: no
+        // usage object at all (REQUIREMENTS §14 flags this as an
+        // unconfirmed assumption — never actually verified against a
+        // live LibreChat deployment) vs. one present but not matching
+        // either known provider shape. Either way this is the only
+        // signal an operator has to root-cause "token usage always
+        // shows zero" from real production traffic.
         logger.warn(
-          { runId, usage: response.usage },
-          "LibreChat returned a usage object in an unrecognized shape — token counts not recorded for this run",
+          { runId, agentId: run.job.agentId, hasUsageField: response.usage !== undefined, usage: response.usage },
+          response.usage
+            ? "LibreChat returned a usage object in an unrecognized shape — token counts not recorded for this run"
+            : "LibreChat response had no usage object at all — token counts not recorded for this run",
         );
       }
       const computedCost = tokenUsage
