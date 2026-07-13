@@ -12,8 +12,20 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const SALT = "nexus-scheduler-static-salt-v1"; // fixed salt is fine: the secret is the master key, not the salt
+const MIN_MASTER_KEY_LENGTH = 32;
 
 function deriveKey(masterKey: string): Buffer {
+  // Each consuming service's own config schema already enforces a
+  // minimum length, but that's easy to miss for a future caller (a
+  // script, a test, a new service) that reaches this function directly.
+  // scryptSync('', SALT) happily returns a deterministic key, silently
+  // "encrypting" every secret under a globally-predictable value instead
+  // of failing — this is the one place that must refuse to let that happen.
+  if (masterKey.length < MIN_MASTER_KEY_LENGTH) {
+    throw new Error(
+      `API_KEY_ENCRYPTION_KEY must be at least ${MIN_MASTER_KEY_LENGTH} characters (got ${masterKey.length})`,
+    );
+  }
   return scryptSync(masterKey, SALT, 32);
 }
 
