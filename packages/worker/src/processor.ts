@@ -35,6 +35,30 @@ export function createRunProcessor(
   return worker;
 }
 
+// Both calls have their own internal best-effort error handling, but not
+// around every early lookup (e.g. deliverWebhooksForRun's initial
+// Prisma queries) — wrapping them here too means a failure in either can
+// never escape into processRun's outer catch, which would otherwise
+// misclassify an already-successful run as a retryable failure and
+// either re-run the agent or overwrite a SUCCESS result to FAILED.
+async function deliverTerminalSideEffects(
+  runId: string,
+  jobId: string,
+  config: WorkerConfig,
+  logger: Logger,
+): Promise<void> {
+  try {
+    await deliverWebhooksForRun(runId, jobId, config, logger);
+  } catch (err) {
+    logger.error({ runId, err }, "webhook delivery threw unexpectedly — run outcome is unaffected");
+  }
+  try {
+    await sendRunNotificationEmail(runId, jobId, config, logger);
+  } catch (err) {
+    logger.error({ runId, err }, "run notification email threw unexpectedly — run outcome is unaffected");
+  }
+}
+
 async function processRun(
   bullJob: BullJob<RunJobData>,
   token: string | undefined,
@@ -59,6 +83,17 @@ async function processRun(
       schedule: true,
     },
   });
+
+  // Idempotency guard: a Run already in a terminal state has already
+  // been fully processed — re-running it would call the agent a second
+  // time (duplicate cost/side effects) or overwrite a SUCCESS result.
+  // This can happen via BullMQ redelivery after a worker crash between
+  // finishing the DB update and acking the job, not just the specific
+  // webhook/notification-failure scenario below.
+  if (run.status === "SUCCESS" || run.status === "FAILED" || run.status === "CANCELLED" || run.status === "SKIPPED") {
+    logger.warn({ runId, status: run.status }, "run already in a terminal state, skipping reprocessing");
+    return;
+  }
 
   // Per-user concurrency limiting (§2.1) — attributed to the Job's
   // owner, the only "user" identity available on every Run regardless
@@ -166,8 +201,7 @@ async function processRun(
         correlationId: runId,
       });
 
-      await deliverWebhooksForRun(runId, run.jobId, config, logger);
-      await sendRunNotificationEmail(runId, run.jobId, config, logger);
+      await deliverTerminalSideEffects(runId, run.jobId, config, logger);
     } catch (err) {
       const transient = err instanceof LibreChatError ? err.transient : true;
       const errorMessage = err instanceof Error ? err.message : "unknown error";
@@ -190,8 +224,7 @@ async function processRun(
           correlationId: runId,
         });
 
-        await deliverWebhooksForRun(runId, run.jobId, config, logger);
-        await sendRunNotificationEmail(runId, run.jobId, config, logger);
+        await deliverTerminalSideEffects(runId, run.jobId, config, logger);
 
         if (!transient) {
           logger.warn({ runId, errorMessage }, "non-transient failure, not retrying");
