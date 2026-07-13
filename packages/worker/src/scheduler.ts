@@ -1,10 +1,35 @@
 import type { Queue } from "bullmq";
-import { computeNextFireTime, intervalConfigSchema } from "@nexus-scheduler/shared";
+import { computeNextFireTime, intervalConfigSchema, type IntervalConfig } from "@nexus-scheduler/shared";
 import { prisma } from "./db.js";
 import type { RunJobData } from "./queue.js";
 import type { Logger } from "./logger.js";
 import type { WorkerConfig } from "./config.js";
 import type { Metrics } from "./metrics.js";
+
+// computeNextFireTime only advances by a single interval from `base`. A
+// schedule down for longer than one interval needs its nextFireAt rolled
+// all the way forward past `now` in this same tick — otherwise every
+// subsequent tick sees it as missed again, advances by just one interval,
+// and emits one SKIPPED run per tick until the backlog finally clears
+// (REQUIREMENTS §2.4's "skip missed fires" intent, not "skip one per tick
+// forever"). The interval schema enforces a positive minimum step
+// (minutes >= 5, hours >= 1, daily/weekly >= 1 day), so this always
+// terminates; the iteration cap is a defense-in-depth guard against a
+// future schema change accidentally allowing a non-advancing interval.
+const MAX_CATCH_UP_ITERATIONS = 100_000;
+
+function computeCaughtUpNextFireAt(
+  intervalConfig: IntervalConfig,
+  timezone: string,
+  base: Date,
+  now: Date,
+): Date {
+  let next = computeNextFireTime(intervalConfig, timezone, base);
+  for (let i = 0; next <= now && i < MAX_CATCH_UP_ITERATIONS; i++) {
+    next = computeNextFireTime(intervalConfig, timezone, next);
+  }
+  return next;
+}
 
 // Polls Postgres for due schedules and enqueues runs. REQUIREMENTS.md
 // §2.4: a fire time missed because the worker was down is *skipped*, not
@@ -57,10 +82,11 @@ export function startSchedulerLoop(
           schedule.type === "ONE_TIME"
             ? { nextFireAt: null, paused: true }
             : {
-                nextFireAt: computeNextFireTime(
+                nextFireAt: computeCaughtUpNextFireAt(
                   intervalConfigSchema.parse(schedule.intervalConfig),
                   schedule.timezone,
                   schedule.nextFireAt ?? now,
+                  now,
                 ),
               };
         const claim = await prisma.schedule.updateMany({

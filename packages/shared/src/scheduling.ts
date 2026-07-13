@@ -17,12 +17,16 @@ export function computeNextFireTime(
       return fromDt.plus({ minutes: intervalConfig.minutes }).toJSDate();
 
     case "every_n_hours": {
-      const next = fromDt.plus({ hours: intervalConfig.hours }).set({
-        minute: intervalConfig.atMinute,
-        second: 0,
-        millisecond: 0,
-      });
-      return (next > fromDt ? next : next.plus({ hours: intervalConfig.hours })).toJSDate();
+      // Anchor to the target minute in the *current* hour first (matching
+      // the daily/weekly cases below), only advancing by a full interval
+      // if that candidate has already passed — adding the interval before
+      // aligning the minute (the previous approach) skips the valid
+      // same-cycle occurrence whenever atMinute is still ahead of `from`.
+      let next = fromDt.set({ minute: intervalConfig.atMinute, second: 0, millisecond: 0 });
+      if (next <= fromDt) {
+        next = next.plus({ hours: intervalConfig.hours });
+      }
+      return next.toJSDate();
     }
 
     case "daily": {
