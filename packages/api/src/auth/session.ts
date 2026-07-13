@@ -1,3 +1,4 @@
+import type { Request } from "express";
 import "express-session";
 import type { RoleName } from "@nexus-scheduler/shared";
 
@@ -20,4 +21,17 @@ declare module "express-session" {
       returnTo?: string;
     };
   }
+}
+
+// Rotates the session id at the moment a session is elevated to
+// authenticated, so a session id an attacker fixed on a victim before
+// login (cookie injection, shared subdomain) can't be reused afterward —
+// wraps express-session's callback-based regenerate() in a Promise.
+export function regenerateSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }

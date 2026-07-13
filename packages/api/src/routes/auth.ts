@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { localLoginSchema, forgotPasswordSchema, resetPasswordSchema, hashResetToken } from "@nexus-scheduler/shared";
 import type { AppConfig } from "../config.js";
 import type { Logger } from "../logger.js";
@@ -7,6 +8,7 @@ import { generatePkce, getOrInitOidcClient, mapKeycloakRole } from "../auth/oidc
 import { prisma } from "../db.js";
 import { recordAuditEvent } from "../audit.js";
 import { issuePasswordResetEmail } from "../passwordReset.js";
+import { regenerateSession } from "../auth/session.js";
 
 const BCRYPT_ROUNDS = 12;
 // A precomputed hash of a value nobody will ever type, used to keep
@@ -14,6 +16,35 @@ const BCRYPT_ROUNDS = 12;
 // — otherwise a non-existent-account login would return measurably
 // faster than a wrong-password one, an account-enumeration side channel.
 const DUMMY_HASH = bcrypt.hashSync("nexus-scheduler-dummy-comparison-target", BCRYPT_ROUNDS);
+
+// REQUIREMENTS §10 OWASP hardening: unthrottled login/reset endpoints
+// are a password-spray / email-bombing vector, including against the
+// always-reachable break-glass admin account. Per-IP is the simplest
+// effective control here since app.set("trust proxy", 1) already makes
+// req.ip reflect the real client through the one trusted reverse proxy hop.
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "too many login attempts, please try again later" },
+});
+const passwordResetRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "too many requests, please try again later" },
+});
+
+// Only a same-origin, path-only value is accepted — anything else (an
+// absolute URL, "//evil.com" protocol-relative, "/\evil.com") is rejected
+// so a crafted /auth/login?returnTo=... link can't hand a post-login
+// redirect off to an attacker-controlled origin.
+function sanitizeReturnTo(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return /^\/(?!\/|\\)/.test(value) ? value : undefined;
+}
 
 export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   const router = Router();
@@ -32,7 +63,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       state,
       nonce,
       codeVerifier,
-      returnTo: typeof req.query.returnTo === "string" ? req.query.returnTo : undefined,
+      returnTo: sanitizeReturnTo(req.query.returnTo),
     };
     const authUrl = client.authorizationUrl({
       scope: "openid email profile",
@@ -44,12 +75,13 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
     res.redirect(authUrl);
   });
 
-  router.get("/callback", async (req, res) => {
+  router.get("/callback", loginRateLimiter, async (req, res) => {
     const pending = req.session.oidc;
     if (!pending) {
       res.status(400).json({ error: "no pending OIDC login in this session" });
       return;
     }
+    const returnTo = pending.returnTo;
 
     try {
       const client = await getOrInitOidcClient(config, logger);
@@ -93,6 +125,11 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
         },
       });
 
+      // Regenerating here (rather than merely overwriting session.user on
+      // the pre-auth session id) rotates the session id itself, so a
+      // session id an attacker fixed on the victim before login can't be
+      // reused once the session is authenticated (session fixation).
+      await regenerateSession(req);
       req.session.user = {
         id: user.id,
         email: user.email,
@@ -100,7 +137,6 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
         role: user.role,
         authSource: "OIDC",
       };
-      delete req.session.oidc;
 
       await recordAuditEvent({
         req,
@@ -113,7 +149,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
         result: "SUCCESS",
       });
 
-      res.redirect(pending.returnTo ?? "/");
+      res.redirect(returnTo ?? "/");
     } catch (err) {
       logger.error({ err }, "OIDC callback failed");
       await recordAuditEvent({
@@ -164,7 +200,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   // whole point is not depending on Keycloak — or an admin's own config
   // toggle — being available. Ordinary local accounts are blocked when
   // the flag is off.
-  router.post("/local-login", async (req, res) => {
+  router.post("/local-login", loginRateLimiter, async (req, res) => {
     const parsed = localLoginSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -196,6 +232,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       return;
     }
 
+    await regenerateSession(req);
     req.session.user = {
       id: user.id,
       email: user.email,
@@ -223,7 +260,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   // Gated by LOCAL_AUTH_ENABLED: the built-in admin's password is always
   // controlled by BOOTSTRAP_ADMIN_PASSWORD, never self-reset, so there's
   // no legitimate use of this path when ordinary local accounts are off.
-  router.post("/local/forgot-password", async (req, res) => {
+  router.post("/local/forgot-password", passwordResetRateLimiter, async (req, res) => {
     if (!config.LOCAL_AUTH_ENABLED) {
       res.status(503).json({ error: "local accounts are disabled on this deployment" });
       return;
@@ -242,7 +279,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
     res.status(204).send();
   });
 
-  router.post("/local/reset-password", async (req, res) => {
+  router.post("/local/reset-password", passwordResetRateLimiter, async (req, res) => {
     if (!config.LOCAL_AUTH_ENABLED) {
       res.status(503).json({ error: "local accounts are disabled on this deployment" });
       return;
