@@ -1,18 +1,21 @@
 import { z } from "zod";
+import { httpUrlSchema } from "./url.js";
 
 // Admin-only allow-list entry (REQUIREMENTS §2.2/§10) — the destination
 // URL is never user-supplied per-job, only picked from this list, which
 // is exactly what prevents the outbound-delivery feature from becoming
-// an SSRF/exfiltration path.
+// an SSRF/exfiltration path. Restricted to http(s): a file:// entry in
+// this allow-list would be nonsensical, and z.string().url() alone
+// accepts it (and javascript:/data:) with no complaint.
 export const createWebhookDestinationSchema = z.object({
   name: z.string().min(1).max(200),
-  url: z.string().url(),
+  url: httpUrlSchema,
 });
 export type CreateWebhookDestinationInput = z.infer<typeof createWebhookDestinationSchema>;
 
 export const updateWebhookDestinationSchema = z.object({
   name: z.string().min(1).max(200).optional(),
-  url: z.string().url().optional(),
+  url: httpUrlSchema.optional(),
   active: z.boolean().optional(),
 });
 export type UpdateWebhookDestinationInput = z.infer<typeof updateWebhookDestinationSchema>;

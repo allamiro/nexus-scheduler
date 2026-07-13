@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { cssColorSchema } from "./color.js";
+import { httpUrlSchema } from "./url.js";
 
 // Admin-editable branding (§5) and the system-wide classification
 // banner (§6) — one settings surface, two independent concerns living
@@ -8,7 +9,7 @@ import { cssColorSchema } from "./color.js";
 // singleton rather than scattering admin config across tables.
 export const updateAppSettingsSchema = z.object({
   productName: z.string().min(1).max(100).optional(),
-  logoUrl: z.string().url().nullable().optional(),
+  logoUrl: httpUrlSchema.nullable().optional(),
   primaryColor: cssColorSchema.optional(),
   classificationBannerText: z.string().min(1).max(200).optional(),
   classificationBannerBgColor: cssColorSchema.optional(),
