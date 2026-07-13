@@ -50,6 +50,10 @@ const envSchema = z.object({
   // the cluster network; see helm/nexus-scheduler's pdf-service
   // Deployment/Service/NetworkPolicy.
   PDF_SERVICE_URL: z.string().url().default("http://localhost:4100"),
+  // Optional — must match pdf-service's own PDF_SERVICE_SHARED_SECRET.
+  // Defense-in-depth on top of NetworkPolicy; unset preserves prior
+  // unauthenticated behavior.
+  PDF_SERVICE_SHARED_SECRET: z.string().optional(),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });

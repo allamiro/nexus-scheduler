@@ -61,7 +61,7 @@ export async function sendRunNotificationEmail(
         computedCost: run.computedCost?.toString() ?? null,
         output: run.output,
         errorMessage: run.errorMessage,
-      });
+      }, config.PDF_SERVICE_SHARED_SECRET);
       attachments = [{ filename: `run-${run.id}.pdf`, content: pdf, contentType: "application/pdf" }];
     }
 

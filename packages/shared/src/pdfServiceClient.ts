@@ -50,10 +50,13 @@ export class PdfServiceError extends Error {
   }
 }
 
-async function postForPdf(url: string, body: unknown): Promise<Buffer> {
+async function postForPdf(url: string, body: unknown, sharedSecret: string | undefined): Promise<Buffer> {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(sharedSecret ? { "X-Internal-Auth": sharedSecret } : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -63,10 +66,22 @@ async function postForPdf(url: string, body: unknown): Promise<Buffer> {
   return Buffer.from(await response.arrayBuffer());
 }
 
-export function requestRunReportPdf(pdfServiceUrl: string, data: RunReportPdfRequest): Promise<Buffer> {
-  return postForPdf(`${pdfServiceUrl}/render/run-report`, data);
+// sharedSecret mirrors pdf-service's own optional PDF_SERVICE_SHARED_SECRET
+// (defense-in-depth on top of NetworkPolicy, REQUIREMENTS §10) — omit it
+// (or leave it unset on the pdf-service side) to keep prior unauthenticated
+// behavior.
+export function requestRunReportPdf(
+  pdfServiceUrl: string,
+  data: RunReportPdfRequest,
+  sharedSecret?: string,
+): Promise<Buffer> {
+  return postForPdf(`${pdfServiceUrl}/render/run-report`, data, sharedSecret);
 }
 
-export function requestUsageReportPdf(pdfServiceUrl: string, data: UsageReportPdfRequest): Promise<Buffer> {
-  return postForPdf(`${pdfServiceUrl}/render/usage-report`, data);
+export function requestUsageReportPdf(
+  pdfServiceUrl: string,
+  data: UsageReportPdfRequest,
+  sharedSecret?: string,
+): Promise<Buffer> {
+  return postForPdf(`${pdfServiceUrl}/render/usage-report`, data, sharedSecret);
 }

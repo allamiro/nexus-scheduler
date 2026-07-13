@@ -69,7 +69,7 @@ export function startUsageReportLoop(config: WorkerConfig, logger: Logger): Node
         periodEnd: now.toLocaleDateString(),
         generatedAt: now.toLocaleString(),
         ...stats,
-      });
+      }, config.PDF_SERVICE_SHARED_SECRET);
       const attachment: EmailAttachment = {
         filename: `usage-report-${now.toISOString().slice(0, 10)}.pdf`,
         content: pdf,

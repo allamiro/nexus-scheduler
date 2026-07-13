@@ -126,7 +126,7 @@ export function createRunsRouter(config: AppConfig): Router {
       computedCost: run.computedCost?.toString() ?? null,
       output: run.output,
       errorMessage: run.errorMessage,
-    });
+    }, config.PDF_SERVICE_SHARED_SECRET);
 
     await recordAuditEvent({
       req,

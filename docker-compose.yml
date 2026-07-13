@@ -208,6 +208,7 @@ services:
       NODE_ENV: development
       PORT: 4100
       LOG_LEVEL: debug
+      PDF_SERVICE_SHARED_SECRET: ${PDF_SERVICE_SHARED_SECRET}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:4100/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 5s
@@ -232,6 +233,7 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
       LIBRECHAT_BASE_URL: ${LIBRECHAT_BASE_URL}
       PDF_SERVICE_URL: http://pdf-service:4100
+      PDF_SERVICE_SHARED_SECRET: ${PDF_SERVICE_SHARED_SECRET}
       LOG_LEVEL: debug
     depends_on:
       postgres:
@@ -257,6 +259,7 @@ services:
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY}
       LIBRECHAT_BASE_URL: ${LIBRECHAT_BASE_URL}
       PDF_SERVICE_URL: http://pdf-service:4100
+      PDF_SERVICE_SHARED_SECRET: ${PDF_SERVICE_SHARED_SECRET}
       LOG_LEVEL: debug
     depends_on:
       postgres:

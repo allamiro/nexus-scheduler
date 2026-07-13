@@ -134,7 +134,7 @@ export function createAdminReportsRouter(config: AppConfig): Router {
       periodEnd: to.toLocaleDateString(),
       generatedAt: new Date().toLocaleString(),
       ...stats,
-    });
+    }, config.PDF_SERVICE_SHARED_SECRET);
 
     await recordAuditEvent({
       req,

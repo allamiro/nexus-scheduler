@@ -28,6 +28,7 @@ REDIS_PASSWORD=$(random_hex 24)
 
 SESSION_SECRET=$(random_hex 32)
 API_KEY_ENCRYPTION_KEY=$(random_hex 32)
+PDF_SERVICE_SHARED_SECRET=$(random_hex 32)
 
 KEYCLOAK_ADMIN=admin
 KEYCLOAK_ADMIN_PASSWORD=$(random_hex 16)

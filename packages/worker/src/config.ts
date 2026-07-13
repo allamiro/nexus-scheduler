@@ -13,6 +13,10 @@ const envSchema = z.object({
   // config.ts for the full rationale (same service, both processes call
   // it as clients).
   PDF_SERVICE_URL: z.string().url().default("http://localhost:4100"),
+  // Optional — must match pdf-service's own PDF_SERVICE_SHARED_SECRET.
+  // Defense-in-depth on top of NetworkPolicy; unset preserves prior
+  // unauthenticated behavior.
+  PDF_SERVICE_SHARED_SECRET: z.string().optional(),
 
   // §2.1 concurrency/timeout defaults — admin-configurable in the DB
   // eventually; env vars are the bootstrap default until an admin
