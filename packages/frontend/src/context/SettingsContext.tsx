@@ -60,15 +60,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // rather than mutating .href in place, since some browsers don't
   // reliably re-fetch a changed favicon otherwise.
   useEffect(() => {
-    if (!settings.logoUrl) {
-      return;
-    }
     const existing = document.querySelectorAll<HTMLLinkElement>("link[rel='icon']");
     existing.forEach((el) => el.remove());
+    if (!settings.logoUrl) {
+      // An admin who sets then clears a logo shouldn't be stuck with the
+      // previously injected (and now possibly-404) icon until a full
+      // reload — removing it above and stopping here reverts to
+      // whatever the browser/index.html would show with no override.
+      return;
+    }
     const link = document.createElement("link");
     link.rel = "icon";
     link.href = settings.logoUrl;
     document.head.appendChild(link);
+    return () => {
+      link.remove();
+    };
   }, [settings.logoUrl]);
 
   return (
