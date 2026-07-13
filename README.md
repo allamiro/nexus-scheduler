@@ -793,6 +793,20 @@ if the security review calls for it.
   prior owner rather than whichever admin happened to perform the
   transfer — a bug caught and fixed during this same verification pass.
 
+- **The branding logo is now also the browser-tab favicon.** No
+  separate favicon setting — `SettingsContext.tsx` sets/replaces a
+  `<link rel="icon">` element to `settings.logoUrl` whenever it changes,
+  the same admin-configured value `AppLayout` and `LoginPage` already
+  render as the in-app logo. Left alone (browser default tab icon) when
+  no logo is configured, matching those same components not rendering a
+  logo `Avatar` at all in that case. Removes and re-inserts the `<link>`
+  rather than mutating `.href` in place, since some browsers don't
+  reliably re-fetch a changed favicon otherwise. Verified in a real
+  headless browser against the built app (not just typechecked): a
+  mocked `/api/settings` response with a `logoUrl` produces exactly one
+  `link[rel="icon"]` with that exact href, and a `null` logoUrl leaves
+  none at all.
+
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
 implement, and each bullet above for the specific caveats/known

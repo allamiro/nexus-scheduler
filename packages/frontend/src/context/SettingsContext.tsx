@@ -52,6 +52,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     };
   }, [refetchToken]);
 
+  // The browser-tab favicon follows the same admin-configured branding
+  // logo used everywhere else (AppLayout, LoginPage) — no separate
+  // favicon setting to keep in sync. Left alone (browser default) when
+  // no logo is configured, same as those Avatar components not
+  // rendering at all in that case. Removes and re-inserts the <link>
+  // rather than mutating .href in place, since some browsers don't
+  // reliably re-fetch a changed favicon otherwise.
+  useEffect(() => {
+    if (!settings.logoUrl) {
+      return;
+    }
+    const existing = document.querySelectorAll<HTMLLinkElement>("link[rel='icon']");
+    existing.forEach((el) => el.remove());
+    const link = document.createElement("link");
+    link.rel = "icon";
+    link.href = settings.logoUrl;
+    document.head.appendChild(link);
+  }, [settings.logoUrl]);
+
   return (
     <SettingsContext.Provider value={{ settings, loading, refetch: () => setRefetchToken((t) => t + 1) }}>
       {children}
