@@ -69,10 +69,28 @@ async function makeJobAndRun(status: "SUCCESS" | "FAILED" | "CANCELLED" | "PENDI
   return { user, project, job, run };
 }
 
-async function makeDestination(url: string, active = true) {
+async function makeDestination(
+  url: string,
+  options: {
+    active?: boolean;
+    headers?: Record<string, string>;
+    notifyOnSuccess?: boolean;
+    notifyOnFailure?: boolean;
+    notifyOnCancelled?: boolean;
+  } = {},
+) {
   const secret = "a-real-plaintext-webhook-secret";
   const destination = await prisma.webhookDestination.create({
-    data: { name: "Dest", url, encryptedHmacSecret: encryptSecret(secret, ENCRYPTION_KEY), active },
+    data: {
+      name: "Dest",
+      url,
+      encryptedHmacSecret: encryptSecret(secret, ENCRYPTION_KEY),
+      active: options.active ?? true,
+      headers: options.headers,
+      notifyOnSuccess: options.notifyOnSuccess,
+      notifyOnFailure: options.notifyOnFailure,
+      notifyOnCancelled: options.notifyOnCancelled,
+    },
   });
   return { destination, secret };
 }
@@ -131,7 +149,7 @@ describe("deliverWebhooksForRun", () => {
       called = true;
     });
     server = s;
-    const { destination } = await makeDestination(url, false);
+    const { destination } = await makeDestination(url, { active: false });
     await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
 
     await deliverWebhooksForRun(run.id, job.id, config, logger);
@@ -231,6 +249,60 @@ describe("deliverWebhooksForRun", () => {
     expect(event?.result).toBe("FAILURE");
     expect(event?.errorMessage).toMatch(/500/);
   }, 15_000);
+
+  it("merges custom headers into the request while the fixed headers always win", async () => {
+    const { job, run } = await makeJobAndRun("SUCCESS");
+    let receivedHeaders: Record<string, string | string[] | undefined> = {};
+    const { server: s, url } = await listen((req) => {
+      receivedHeaders = req.headers;
+    });
+    server = s;
+    const { destination } = await makeDestination(url, {
+      // Content-Type/X-Nexus-Signature must never be overridable, even
+      // if a row somehow ends up with them set (bypassing the write-time
+      // zod validation) — re-asserted at delivery time too.
+      headers: { "X-Api-Key": "shared-secret-123", "Content-Type": "text/plain" },
+    });
+    await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
+
+    await deliverWebhooksForRun(run.id, job.id, config, logger);
+
+    expect(receivedHeaders["x-api-key"]).toBe("shared-secret-123");
+    expect(receivedHeaders["content-type"]).toBe("application/json");
+    expect(receivedHeaders["x-nexus-signature"]).toMatch(/^sha256=/);
+  });
+
+  it("skips a destination whose event selection excludes the run's terminal status", async () => {
+    const { job, run } = await makeJobAndRun("FAILED");
+    let called = false;
+    const { server: s, url } = await listen(() => {
+      called = true;
+    });
+    server = s;
+    const { destination } = await makeDestination(url, { notifyOnFailure: false });
+    await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
+
+    await deliverWebhooksForRun(run.id, job.id, config, logger);
+
+    expect(called).toBe(false);
+    const events = await prisma.auditEvent.findMany({ where: { correlationId: run.id } });
+    expect(events).toHaveLength(0);
+  });
+
+  it("still delivers to a destination whose event selection includes the run's terminal status", async () => {
+    const { job, run } = await makeJobAndRun("FAILED");
+    let called = false;
+    const { server: s, url } = await listen(() => {
+      called = true;
+    });
+    server = s;
+    const { destination } = await makeDestination(url, { notifyOnFailure: true, notifyOnSuccess: false });
+    await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
+
+    await deliverWebhooksForRun(run.id, job.id, config, logger);
+
+    expect(called).toBe(true);
+  });
 
   it("delivers independently to multiple active destinations for the same run", async () => {
     const { job, run } = await makeJobAndRun();

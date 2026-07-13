@@ -391,10 +391,25 @@ model WebhookDestination {
   id                    String   @id @default(uuid())
   name                  String
   url                   String // admin-entered — this row *is* the allow-list, §2.2/§10
-  // Server-generated at creation, AES-256-GCM encrypted at rest (same
-  // scheme as ApiKey.encryptedKey) — never entered or displayed to an
-  // admin; used only server-side to sign outbound delivery payloads.
+  // Server-generated, AES-256-GCM encrypted at rest (same scheme as
+  // ApiKey.encryptedKey). Returned in plaintext exactly once — from the
+  // create response and from POST /:id/rotate-secret — so the receiving
+  // endpoint's admin can copy it in to verify X-Nexus-Signature (§27);
+  // never returned by GET/PATCH afterward.
   encryptedHmacSecret   String
+  // Extra headers merged into every outbound delivery (test-send and
+  // real run delivery alike) — e.g. a receiver-side auth token. Record
+  // <string,string>; Content-Type and X-Nexus-Signature are always
+  // fixed by the sender and can't be overridden via this map (enforced
+  // both at the zod-schema layer on write and again at delivery time).
+  headers               Json?
+  // Per-destination event selection (§27) — which terminal Run
+  // statuses actually trigger delivery to this destination. All default
+  // true, matching the pre-#27 behavior of delivering every terminal
+  // state unconditionally.
+  notifyOnSuccess       Boolean  @default(true)
+  notifyOnFailure       Boolean  @default(true)
+  notifyOnCancelled     Boolean  @default(true)
   active                Boolean  @default(true)
   createdAt             DateTime @default(now())
 

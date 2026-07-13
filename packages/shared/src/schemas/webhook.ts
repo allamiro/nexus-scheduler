@@ -1,6 +1,36 @@
 import { z } from "zod";
 import { httpUrlSchema } from "./url.js";
 
+// Header names the sender always controls — Content-Type identifies the
+// body as the signed JSON payload, X-Nexus-Signature carries the HMAC
+// over it. Letting a custom header override either would let an admin
+// (accidentally or not) ship an unsigned/mislabeled request, so both
+// are rejected here (write time) and re-asserted at delivery time.
+const RESERVED_HEADER_NAMES = new Set(["content-type", "x-nexus-signature"]);
+
+// Custom headers merged into outbound delivery (§27) — e.g. a
+// receiver-side auth token. Values are rejected if they contain CR/LF
+// (header injection) since they're passed straight into fetch()'s
+// Headers. Capped at a small count/size: this is a handful of
+// admin-entered auth headers, not a general-purpose templating system.
+export const webhookHeadersSchema = z
+  .record(
+    z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[!#$%&'*+\-.^_`|~0-9a-zA-Z]+$/, "must be a valid HTTP header name"),
+    z
+      .string()
+      .max(2000)
+      .refine((v) => !/[\r\n]/.test(v), { message: "must not contain line breaks" }),
+  )
+  .refine((headers) => Object.keys(headers).length <= 20, { message: "at most 20 custom headers" })
+  .refine((headers) => Object.keys(headers).every((name) => !RESERVED_HEADER_NAMES.has(name.toLowerCase())), {
+    message: "Content-Type and X-Nexus-Signature are set automatically and can't be overridden",
+  });
+export type WebhookHeaders = z.infer<typeof webhookHeadersSchema>;
+
 // Admin-only allow-list entry (REQUIREMENTS §2.2/§10) — the destination
 // URL is never user-supplied per-job, only picked from this list, which
 // is exactly what prevents the outbound-delivery feature from becoming
@@ -10,6 +40,10 @@ import { httpUrlSchema } from "./url.js";
 export const createWebhookDestinationSchema = z.object({
   name: z.string().min(1).max(200),
   url: httpUrlSchema,
+  headers: webhookHeadersSchema.optional(),
+  notifyOnSuccess: z.boolean().optional(),
+  notifyOnFailure: z.boolean().optional(),
+  notifyOnCancelled: z.boolean().optional(),
 });
 export type CreateWebhookDestinationInput = z.infer<typeof createWebhookDestinationSchema>;
 
@@ -17,6 +51,10 @@ export const updateWebhookDestinationSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   url: httpUrlSchema.optional(),
   active: z.boolean().optional(),
+  headers: webhookHeadersSchema.nullable().optional(),
+  notifyOnSuccess: z.boolean().optional(),
+  notifyOnFailure: z.boolean().optional(),
+  notifyOnCancelled: z.boolean().optional(),
 });
 export type UpdateWebhookDestinationInput = z.infer<typeof updateWebhookDestinationSchema>;
 

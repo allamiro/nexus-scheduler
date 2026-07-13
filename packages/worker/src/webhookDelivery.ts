@@ -1,4 +1,9 @@
-import { decryptSecret, signWebhookPayload, type WebhookPayload } from "@nexus-scheduler/shared";
+import {
+  decryptSecret,
+  signWebhookPayload,
+  buildWebhookDeliveryHeaders,
+  type WebhookPayload,
+} from "@nexus-scheduler/shared";
 import { prisma } from "./db.js";
 import { recordAuditEvent } from "./audit.js";
 import type { Logger } from "./logger.js";
@@ -39,6 +44,19 @@ export async function deliverWebhooksForRun(
     return; // only terminal states are ever delivered
   }
 
+  // Per-destination event selection (§27) — a destination can opt out
+  // of some terminal states (e.g. success-only) without disabling it
+  // entirely, which would also stop it from being attachable to a Job.
+  const eligibleLinks = links.filter((link) => {
+    const destination = link.webhookDestination;
+    if (run.status === "SUCCESS") return destination.notifyOnSuccess;
+    if (run.status === "FAILED") return destination.notifyOnFailure;
+    return destination.notifyOnCancelled;
+  });
+  if (eligibleLinks.length === 0) {
+    return;
+  }
+
   const payload: WebhookPayload = {
     runId: run.id,
     jobId: job.id,
@@ -52,12 +70,12 @@ export async function deliverWebhooksForRun(
   const rawBody = JSON.stringify(payload);
 
   await Promise.all(
-    links.map((link) => deliverOne(link.webhookDestination, rawBody, runId, config, logger)),
+    eligibleLinks.map((link) => deliverOne(link.webhookDestination, rawBody, runId, config, logger)),
   );
 }
 
 async function deliverOne(
-  destination: { id: string; name: string; url: string; encryptedHmacSecret: string },
+  destination: { id: string; name: string; url: string; encryptedHmacSecret: string; headers: unknown },
   rawBody: string,
   runId: string,
   config: WorkerConfig,
@@ -71,7 +89,7 @@ async function deliverOne(
     try {
       const response = await fetch(destination.url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Nexus-Signature": `sha256=${signature}` },
+        headers: buildWebhookDeliveryHeaders(destination.headers, signature),
         body: rawBody,
         signal: AbortSignal.timeout(10_000),
       });

@@ -28,6 +28,12 @@ import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { apiFetch } from "../api/client";
+import {
+  WebhookHeaderEditor,
+  headersToRecord,
+  recordToHeaderDrafts,
+  type WebhookHeaderDraft,
+} from "../components/WebhookHeaderEditor";
 
 interface ClassificationLabel {
   id: string;
@@ -69,25 +75,46 @@ interface WebhookDestination {
   id: string;
   name: string;
   url: string;
+  headers: Record<string, string> | null;
+  notifyOnSuccess: boolean;
+  notifyOnFailure: boolean;
+  notifyOnCancelled: boolean;
   active: boolean;
   createdAt: string;
+}
+
+interface WebhookDestinationWithSecret extends WebhookDestination {
+  secret: string;
 }
 
 // This list *is* the allow-list (REQUIREMENTS §2.2/§10) — a Job can only
 // ever attach one of these rows, never an arbitrary URL a user typed in,
 // which is what keeps outbound delivery from becoming an exfiltration
-// path. The signing secret is generated and encrypted server-side; it's
-// never entered here and never shown back.
+// path. The signing secret is generated server-side and returned in
+// plaintext exactly once, from the create/rotate responses (§27) — it's
+// never entered here and never shown back afterward.
 function WebhookDestinationsPanel() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [headerDrafts, setHeaderDrafts] = useState<WebhookHeaderDraft[]>([]);
+  const [notifyOnSuccess, setNotifyOnSuccess] = useState(true);
+  const [notifyOnFailure, setNotifyOnFailure] = useState(true);
+  const [notifyOnCancelled, setNotifyOnCancelled] = useState(true);
+
   const [editingDestination, setEditingDestination] = useState<WebhookDestination | null>(null);
   const [editName, setEditName] = useState("");
   const [editUrl, setEditUrl] = useState("");
+  const [editHeaderDrafts, setEditHeaderDrafts] = useState<WebhookHeaderDraft[]>([]);
+  const [editNotifyOnSuccess, setEditNotifyOnSuccess] = useState(true);
+  const [editNotifyOnFailure, setEditNotifyOnFailure] = useState(true);
+  const [editNotifyOnCancelled, setEditNotifyOnCancelled] = useState(true);
+
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [revealedSecret, setRevealedSecret] = useState<{ name: string; secret: string } | null>(null);
+  const [testedDestinationName, setTestedDestinationName] = useState<string | null>(null);
 
   const destinationsQuery = useQuery({
     queryKey: ["webhook-destinations"],
@@ -96,12 +123,27 @@ function WebhookDestinationsPanel() {
 
   const createDestination = useMutation({
     mutationFn: () =>
-      apiFetch("/api/webhook-destinations", { method: "POST", body: JSON.stringify({ name, url }) }),
-    onSuccess: () => {
+      apiFetch<WebhookDestinationWithSecret>("/api/webhook-destinations", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          url,
+          headers: headersToRecord(headerDrafts),
+          notifyOnSuccess,
+          notifyOnFailure,
+          notifyOnCancelled,
+        }),
+      }),
+    onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ["webhook-destinations"] });
       setCreateOpen(false);
       setName("");
       setUrl("");
+      setHeaderDrafts([]);
+      setNotifyOnSuccess(true);
+      setNotifyOnFailure(true);
+      setNotifyOnCancelled(true);
+      setRevealedSecret({ name: data.name, secret: data.secret });
     },
   });
 
@@ -115,7 +157,14 @@ function WebhookDestinationsPanel() {
     mutationFn: () =>
       apiFetch(`/api/webhook-destinations/${editingDestination!.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name: editName, url: editUrl }),
+        body: JSON.stringify({
+          name: editName,
+          url: editUrl,
+          headers: headersToRecord(editHeaderDrafts) ?? null,
+          notifyOnSuccess: editNotifyOnSuccess,
+          notifyOnFailure: editNotifyOnFailure,
+          notifyOnCancelled: editNotifyOnCancelled,
+        }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["webhook-destinations"] });
@@ -127,6 +176,19 @@ function WebhookDestinationsPanel() {
     mutationFn: (id: string) => apiFetch(`/api/webhook-destinations/${id}`, { method: "DELETE" }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["webhook-destinations"] }),
     onError: (err: unknown) => setDeleteError(err instanceof Error ? err.message : "delete failed"),
+  });
+
+  const testDestination = useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/api/webhook-destinations/${id}/test`, { method: "POST" }),
+  });
+
+  const rotateSecret = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<WebhookDestinationWithSecret>(`/api/webhook-destinations/${id}/rotate-secret`, { method: "POST" }),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["webhook-destinations"] });
+      setRevealedSecret({ name: data.name, secret: data.secret });
+    },
   });
 
   return (
@@ -153,6 +215,22 @@ function WebhookDestinationsPanel() {
           {setActive.error instanceof Error ? setActive.error.message : "Could not update destination."}
         </Alert>
       )}
+      {testDestination.isSuccess && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => testDestination.reset()}>
+          Test webhook sent to &quot;{testedDestinationName}&quot; successfully.
+        </Alert>
+      )}
+      {testDestination.isError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => testDestination.reset()}>
+          Test webhook to &quot;{testedDestinationName}&quot; failed:{" "}
+          {testDestination.error instanceof Error ? testDestination.error.message : "unknown error"}
+        </Alert>
+      )}
+      {rotateSecret.isError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => rotateSecret.reset()}>
+          {rotateSecret.error instanceof Error ? rotateSecret.error.message : "Could not rotate secret."}
+        </Alert>
+      )}
 
       <List dense>
         {destinationsQuery.data?.map((destination) => (
@@ -163,10 +241,38 @@ function WebhookDestinationsPanel() {
               <Stack direction="row" spacing={1}>
                 <Button
                   size="small"
+                  disabled={testDestination.isPending}
+                  onClick={() => {
+                    setTestedDestinationName(destination.name);
+                    testDestination.mutate(destination.id);
+                  }}
+                >
+                  Test
+                </Button>
+                <Button
+                  size="small"
+                  disabled={rotateSecret.isPending}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Rotate signing secret?",
+                      message: `The current secret for "${destination.name}" stops validating signatures immediately — any receiver verifying them will need the new one.`,
+                      confirmLabel: "Rotate",
+                    });
+                    if (ok) rotateSecret.mutate(destination.id);
+                  }}
+                >
+                  Rotate Secret
+                </Button>
+                <Button
+                  size="small"
                   onClick={() => {
                     setEditingDestination(destination);
                     setEditName(destination.name);
                     setEditUrl(destination.url);
+                    setEditHeaderDrafts(recordToHeaderDrafts(destination.headers));
+                    setEditNotifyOnSuccess(destination.notifyOnSuccess);
+                    setEditNotifyOnFailure(destination.notifyOnFailure);
+                    setEditNotifyOnCancelled(destination.notifyOnCancelled);
                   }}
                 >
                   Edit
@@ -224,6 +330,17 @@ function WebhookDestinationsPanel() {
               helperText="Must be an internal endpoint reachable from the Worker"
               fullWidth
             />
+            <NotifyEventCheckboxes
+              notifyOnSuccess={notifyOnSuccess}
+              notifyOnFailure={notifyOnFailure}
+              notifyOnCancelled={notifyOnCancelled}
+              onChange={(next) => {
+                if (next.notifyOnSuccess !== undefined) setNotifyOnSuccess(next.notifyOnSuccess);
+                if (next.notifyOnFailure !== undefined) setNotifyOnFailure(next.notifyOnFailure);
+                if (next.notifyOnCancelled !== undefined) setNotifyOnCancelled(next.notifyOnCancelled);
+              }}
+            />
+            <WebhookHeaderEditor headers={headerDrafts} onChange={setHeaderDrafts} />
             {createDestination.isError && (
               <Alert severity="error">
                 {createDestination.error instanceof Error
@@ -251,6 +368,17 @@ function WebhookDestinationsPanel() {
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField label="Name" value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus fullWidth />
             <TextField label="URL" value={editUrl} onChange={(e) => setEditUrl(e.target.value)} fullWidth />
+            <NotifyEventCheckboxes
+              notifyOnSuccess={editNotifyOnSuccess}
+              notifyOnFailure={editNotifyOnFailure}
+              notifyOnCancelled={editNotifyOnCancelled}
+              onChange={(next) => {
+                if (next.notifyOnSuccess !== undefined) setEditNotifyOnSuccess(next.notifyOnSuccess);
+                if (next.notifyOnFailure !== undefined) setEditNotifyOnFailure(next.notifyOnFailure);
+                if (next.notifyOnCancelled !== undefined) setEditNotifyOnCancelled(next.notifyOnCancelled);
+              }}
+            />
+            <WebhookHeaderEditor headers={editHeaderDrafts} onChange={setEditHeaderDrafts} />
             {updateDestination.isError && (
               <Alert severity="error">
                 {updateDestination.error instanceof Error
@@ -271,6 +399,90 @@ function WebhookDestinationsPanel() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={!!revealedSecret} onClose={() => setRevealedSecret(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Webhook Signing Secret</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="warning">
+              Copy this now — it won&apos;t be shown again. Give it to the receiver at &quot;
+              {revealedSecret?.name}&quot; so it can verify the X-Nexus-Signature header on each
+              delivery.
+            </Alert>
+            <TextField
+              label="HMAC Secret"
+              value={revealedSecret?.secret ?? ""}
+              fullWidth
+              InputProps={{ readOnly: true }}
+              onFocus={(e) => e.target.select()}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              if (revealedSecret) void navigator.clipboard.writeText(revealedSecret.secret);
+            }}
+          >
+            Copy
+          </Button>
+          <Button variant="contained" onClick={() => setRevealedSecret(null)}>
+            Done
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}
+
+// Per-destination event selection (§27) — which terminal Run statuses
+// actually trigger delivery. All default true, matching the pre-§27
+// behavior of delivering every terminal state unconditionally.
+function NotifyEventCheckboxes({
+  notifyOnSuccess,
+  notifyOnFailure,
+  notifyOnCancelled,
+  onChange,
+}: {
+  notifyOnSuccess: boolean;
+  notifyOnFailure: boolean;
+  notifyOnCancelled: boolean;
+  onChange: (next: Partial<{ notifyOnSuccess: boolean; notifyOnFailure: boolean; notifyOnCancelled: boolean }>) => void;
+}) {
+  return (
+    <Box>
+      <Typography variant="subtitle2" gutterBottom>
+        Deliver on
+      </Typography>
+      <Stack direction="row" spacing={1}>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={notifyOnSuccess}
+              onChange={(e) => onChange({ notifyOnSuccess: e.target.checked })}
+            />
+          }
+          label="Success"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={notifyOnFailure}
+              onChange={(e) => onChange({ notifyOnFailure: e.target.checked })}
+            />
+          }
+          label="Failure"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={notifyOnCancelled}
+              onChange={(e) => onChange({ notifyOnCancelled: e.target.checked })}
+            />
+          }
+          label="Cancelled"
+        />
+      </Stack>
     </Box>
   );
 }
