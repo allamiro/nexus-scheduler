@@ -148,6 +148,29 @@ oidc:
 
 librechat:
   baseUrl: ""
+  tls:
+    # PEM-encoded custom CA certificate(s) to trust when this app calls
+    # LibreChat over HTTPS — for environments (like this one) where
+    # LibreChat's cert chains up to an internal/custom CA rather than a
+    # publicly trusted one. Paste the full chain here, or supply it at
+    # install time with `--set-file librechat.tls.caBundle=ca-bundle.pem`
+    # instead of editing this file. Left empty (the default), no
+    # ConfigMap is created and Node's normal public trust store is used
+    # unmodified. Not a Secret: CA certificates are public by
+    # definition, so this is rendered into a ConfigMap
+    # (see templates/librechat-ca-configmap.yaml) mounted into the api
+    # and worker containers, whose path is exported via the
+    # NODE_EXTRA_CA_CERTS environment variable — Node's fetch()
+    # (everything this app uses to call LibreChat) honors that
+    # process-wide with no application code changes needed.
+    caBundle: ""
+    # DANGEROUS: disables ALL TLS certificate validation for every
+    # outbound HTTPS call this app makes (not narrowly scoped to
+    # LibreChat), via NODE_TLS_REJECT_UNAUTHORIZED=0. Intended only for
+    # temporarily testing against a LibreChat instance whose cert chain
+    # isn't sorted out yet — never enable this in a production install,
+    # and prefer caBundle above once you have the real CA cert(s).
+    insecureSkipVerify: false
 
 serviceAccount:
   create: true

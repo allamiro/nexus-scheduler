@@ -49,6 +49,19 @@ spec:
               value: {{ .Values.librechat.baseUrl | quote }}
             - name: PDF_SERVICE_URL
               value: "http://{{ include "nexus-scheduler.fullname" . }}-pdf-service:{{ .Values.pdfService.port }}"
+            {{- if .Values.librechat.tls.caBundle }}
+            # Node's fetch() (this app's HTTP client for every LibreChat
+            # call) honors this process-wide with no application code
+            # changes — see values.yaml's librechat.tls.caBundle comment.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/nexus-scheduler/librechat-ca/ca.pem
+            {{- end }}
+            {{- if .Values.librechat.tls.insecureSkipVerify }}
+            # DANGEROUS — see values.yaml's librechat.tls.insecureSkipVerify
+            # comment. Disables TLS certificate validation entirely.
+            - name: NODE_TLS_REJECT_UNAUTHORIZED
+              value: "0"
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.appSecretName }}
@@ -71,6 +84,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.librechat.tls.caBundle }}
+            - name: librechat-ca
+              mountPath: /etc/nexus-scheduler/librechat-ca
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.librechat.tls.caBundle }}
+        - name: librechat-ca
+          configMap:
+            name: {{ include "nexus-scheduler.fullname" . }}-librechat-ca
+        {{- end }}

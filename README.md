@@ -941,6 +941,45 @@ if the security review calls for it.
   merged values and validated as parseable YAML. **Not verified**: an
   actual `helm install` exercising the hook Job against a real database.
 
+- **Custom CA trust and TLS-bypass for LibreChat.** This deployment's
+  LibreChat instance presents a certificate chaining up to an internal/
+  custom CA rather than a publicly trusted one, and api/worker (the only
+  two components that call LibreChat) use native `fetch()` everywhere —
+  no axios, no hand-rolled `https.Agent`. Verified empirically in this
+  sandbox with a real self-signed-CA HTTPS server: plain `fetch()` fails
+  with `UNABLE_TO_VERIFY_LEAF_SIGNATURE` against it, setting
+  `NODE_EXTRA_CA_CERTS` to the CA's PEM file fixes it with zero
+  application code changes (Node's `fetch`/undici honors that env var
+  process-wide), and `NODE_TLS_REJECT_UNAUTHORIZED=0` bypasses validation
+  entirely. Since this is fully solvable at the Node-process/deployment
+  level, no source changes were needed — only chart changes:
+  - `librechat.tls.caBundle` (values.yaml, default `""`): paste a PEM CA
+    bundle in, or supply one at install time with `--set-file
+    librechat.tls.caBundle=ca-bundle.pem`. When set,
+    `templates/librechat-ca-configmap.yaml` renders a ConfigMap holding
+    it (deliberately a ConfigMap, not a Secret — CA certs are public),
+    mounted read-only into both api and worker at
+    `/etc/nexus-scheduler/librechat-ca/ca.pem`, with `NODE_EXTRA_CA_CERTS`
+    pointed at that path.
+  - `librechat.tls.insecureSkipVerify` (default `false`): sets
+    `NODE_TLS_REJECT_UNAUTHORIZED=0` on both api and worker when `true`.
+    Disables TLS validation for **every** outbound HTTPS call those
+    processes make, not just to LibreChat — values.yaml, the rendered
+    env var, and `NOTES.txt` (which prints a loud warning post-install
+    when this is enabled) all call that out explicitly. For temporary use
+    against a test instance only; prefer `caBundle` once the real CA
+    cert is available.
+  - Verified: the real `NODE_EXTRA_CA_CERTS`/`NODE_TLS_REJECT_UNAUTHORIZED`
+    behavior above against a real HTTPS server in this sandbox (not
+    simulated), plus all four affected templates (api-deployment,
+    worker-deployment, the new ConfigMap, NOTES.txt) rendered through the
+    hand-built harness across all three combinations (neither set, only
+    `caBundle` set, only `insecureSkipVerify` set) and validated as
+    parseable YAML/ConfigMap data. **Not verified**: an actual `helm
+    install` mounting the ConfigMap into a real pod and confirming
+    LibreChat calls succeed end to end against a real custom-CA LibreChat
+    instance.
+
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
 implement, and each bullet above for the specific caveats/known

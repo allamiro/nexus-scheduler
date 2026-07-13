@@ -59,3 +59,18 @@ target:
   - {{ include "nexus-scheduler.fullname" . }}-api        (Service, port {{ .Values.api.port }}) for /api and /auth
 
 Or, if `ingress.enabled=true`, the Ingress at {{ .Values.ingress.host }}.
+
+{{- if .Values.librechat.tls.caBundle }}
+
+A custom LibreChat CA bundle is configured (librechat.tls.caBundle) — the
+api/worker pods trust it via NODE_EXTRA_CA_CERTS, mounted from ConfigMap
+{{ include "nexus-scheduler.fullname" . }}-librechat-ca.
+{{- end }}
+{{- if .Values.librechat.tls.insecureSkipVerify }}
+
+*** WARNING: librechat.tls.insecureSkipVerify is enabled *** — TLS
+certificate validation is OFF for every outbound HTTPS call the api and
+worker pods make, not just to LibreChat. This should never be set in a
+production install; disable it once LibreChat's real certificate chain
+(or librechat.tls.caBundle above) is in place.
+{{- end }}

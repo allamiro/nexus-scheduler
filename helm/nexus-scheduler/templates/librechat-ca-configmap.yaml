@@ -1,0 +1,14 @@
+{{- if .Values.librechat.tls.caBundle }}
+# Not a Secret on purpose — CA certificates are public by definition.
+# Mounted into api/worker and exported via NODE_EXTRA_CA_CERTS; see
+# values.yaml's comment on librechat.tls.caBundle for the full rationale.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nexus-scheduler.fullname" . }}-librechat-ca
+  labels:
+    {{- include "nexus-scheduler.labels" . | nindent 4 }}
+data:
+  ca.pem: |
+    {{- .Values.librechat.tls.caBundle | nindent 4 }}
+{{- end }}
