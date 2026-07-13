@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
-import { AppBar, Avatar, Box, Button, Toolbar, Typography } from "@mui/material";
+import { AppBar, Avatar, Box, Button, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
+import DarkModeIcon from "@mui/icons-material/DarkMode";
+import LightModeIcon from "@mui/icons-material/LightMode";
 import { Link as RouterLink } from "react-router-dom";
 import { ClassificationBanner } from "../components/ClassificationBanner";
 import { useSettings } from "../context/SettingsContext";
 import { useAuth } from "../context/AuthContext";
+import { useColorMode } from "../context/ColorModeContext";
 
 const NAV_LINKS = [
   { to: "/", label: "Dashboard" },
@@ -24,6 +27,7 @@ const NAV_LINKS = [
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { settings } = useSettings();
+  const { mode, toggleMode } = useColorMode();
   const bannerConfig = {
     text: settings.classificationBannerText,
     backgroundColor: settings.classificationBannerBgColor,
@@ -51,6 +55,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <Typography variant="body2">
               {user.displayName ?? user.email} ({user.role})
             </Typography>
+            <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+              <IconButton color="inherit" onClick={toggleMode} aria-label="Toggle dark mode">
+                {mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
+              </IconButton>
+            </Tooltip>
             <Button color="inherit" onClick={() => void logout()}>
               Log out
             </Button>

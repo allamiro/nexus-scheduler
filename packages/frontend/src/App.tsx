@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { buildTheme } from "./theme";
 import { SettingsProvider, useSettings } from "./context/SettingsContext";
+import { ColorModeProvider, useColorMode } from "./context/ColorModeContext";
 import { AuthProvider } from "./context/AuthContext";
 import { AppLayout } from "./layout/AppLayout";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -22,17 +23,21 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <SettingsProvider>
-        <ThemedApp />
+        <ColorModeProvider>
+          <ThemedApp />
+        </ColorModeProvider>
       </SettingsProvider>
     </QueryClientProvider>
   );
 }
 
 // Split out so the theme can be rebuilt from admin-configured branding
-// (§5) once settings load, rather than being fixed at module-eval time.
+// (§5) once settings load, rather than being fixed at module-eval time,
+// and from the user's own light/dark preference (ColorModeContext).
 function ThemedApp() {
   const { settings } = useSettings();
-  const theme = buildTheme(settings);
+  const { mode } = useColorMode();
+  const theme = buildTheme(settings, mode);
 
   return (
     <ThemeProvider theme={theme}>

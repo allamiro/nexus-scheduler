@@ -807,6 +807,24 @@ if the security review calls for it.
   `link[rel="icon"]` with that exact href, and a `null` logoUrl leaves
   none at all.
 
+- **Dark mode toggle.** A personal display preference, not admin
+  branding (§5) — `ColorModeContext` stores it in `localStorage`
+  per-browser rather than in `AppSettings`, defaulting to the OS/browser's
+  own `prefers-color-scheme` the first time a user visits, before
+  they've ever touched the toggle. A sun/moon `IconButton` in the
+  `AppBar` (only shown when logged in, alongside the existing
+  branding/nav chrome) flips it; `theme.ts`'s `buildTheme()` now takes
+  the mode alongside admin branding and passes it straight through to
+  MUI's own `palette.mode`, which handles the light/dark color defaults
+  (background, text, dividers, etc.) without needing every color
+  hand-tuned here. Verified in a real headless browser against the
+  built app: confirmed the initial render actually honors both a
+  `dark` and a `light` `prefers-color-scheme` emulation, confirmed
+  clicking the toggle changes the rendered background color and writes
+  `dark`/`light` to `localStorage`, and confirmed a full page reload
+  keeps the user's explicit choice rather than reverting to the system
+  preference.
+
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
 implement, and each bullet above for the specific caveats/known
