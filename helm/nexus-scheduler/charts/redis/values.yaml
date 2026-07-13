@@ -1,0 +1,42 @@
+# Defaults here are overridden by the parent chart's own `redis:` values
+# block when installed as a subchart of nexus-scheduler (Helm's normal
+# subchart value passthrough) — see helm/nexus-scheduler/values.yaml for
+# the actual deployment-time configuration surface and secret
+# documentation. This file only matters if this subchart is installed
+# standalone.
+
+image:
+  repository: redis
+  tag: "7-alpine"
+  pullPolicy: IfNotPresent
+
+auth:
+  # Pre-existing Secret (never created by this chart, REQUIREMENTS
+  # §9.1/§10 — "never baked into images", never generated here either).
+  # Expected key: `redis-password`.
+  existingSecretName: "nexus-scheduler-redis"
+
+persistence:
+  enabled: true
+  size: 5Gi
+  # Empty = the cluster's default StorageClass.
+  storageClassName: ""
+
+resources:
+  requests: { cpu: "100m", memory: "128Mi" }
+  limits: { cpu: "500m", memory: "512Mi" }
+
+# Unlike the upstream `postgres` image, the official `redis` image never
+# drops privileges internally — it just runs as whatever user the
+# container is launched as. redis:7-alpine's own image creates a `redis`
+# user (typically UID 999, but not guaranteed stable across tags), so a
+# hardcoded runAsUser here risks silently drifting from whatever the
+# pulled tag actually ships. Left unset for the same "revisit once a
+# real cluster exists to validate against" reason as the postgresql
+# subchart; allowPrivilegeEscalation/dropped capabilities still apply.
+podSecurityContext: {}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

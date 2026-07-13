@@ -35,7 +35,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "nexus-scheduler.redisHost" -}}
 {{- if .Values.redis.enabled -}}
-{{ .Release.Name }}-redis-master
+{{ .Release.Name }}-redis
 {{- else -}}
 {{ .Values.externalRedis.host }}
 {{- end -}}

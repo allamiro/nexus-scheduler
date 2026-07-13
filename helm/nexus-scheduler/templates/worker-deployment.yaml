@@ -46,6 +46,10 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.appSecretName }}
+            - secretRef:
+                name: {{ .Values.secrets.databaseSecretName }}
+            - secretRef:
+                name: {{ .Values.secrets.redisSecretName }}
           livenessProbe:
             httpGet: { path: /healthz, port: {{ .Values.worker.healthPort }} }
             initialDelaySeconds: 5

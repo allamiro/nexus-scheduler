@@ -8,16 +8,21 @@ version: 0.1.0
 appVersion: "0.1.0"
 
 # PostgreSQL/Redis are optional subcharts (REQUIREMENTS §9.1: "optionally
-# including... as a subchart/dependency, or bring-your-own"). Bitnami's
-# charts are used here as well-known, established references — in an
-# air-gapped deployment, mirror them (and their images) into the internal
-# chart/image registry and point `dependencies[].repository` there.
+# including... as a subchart/dependency, or bring-your-own"). These are
+# first-party, minimal subcharts vendored directly under charts/ in this
+# repository (not Bitnami's, not fetched from any remote chart registry)
+# — no `repository:` field below on purpose, since Helm resolves a
+# dependency by name+version from the local charts/ directory when none
+# is given. This means `helm install`/`helm package` never needs network
+# access to stand up PostgreSQL/Redis, which a remote registry
+# (including charts.bitnami.com) would rule out entirely in an
+# air-gapped environment. Still only need the app's own container images
+# mirrored into the internal registry (REQUIREMENTS §3/§9.1), same as
+# every other component.
 dependencies:
   - name: postgresql
-    version: "15.x.x"
-    repository: "https://charts.bitnami.com/bitnami"
+    version: "0.1.0"
     condition: postgresql.enabled
   - name: redis
-    version: "19.x.x"
-    repository: "https://charts.bitnami.com/bitnami"
+    version: "0.1.0"
     condition: redis.enabled

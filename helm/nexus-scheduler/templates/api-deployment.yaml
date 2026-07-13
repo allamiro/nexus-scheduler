@@ -54,6 +54,10 @@ spec:
                 name: {{ .Values.secrets.appSecretName }}
             - secretRef:
                 name: {{ .Values.secrets.oidcSecretName }}
+            - secretRef:
+                name: {{ .Values.secrets.databaseSecretName }}
+            - secretRef:
+                name: {{ .Values.secrets.redisSecretName }}
           livenessProbe:
             httpGet: { path: /healthz, port: {{ .Values.api.port }} }
             initialDelaySeconds: 5

@@ -1,0 +1,44 @@
+# Defaults here are overridden by the parent chart's own `postgresql:`
+# values block when installed as a subchart of nexus-scheduler (Helm's
+# normal subchart value passthrough) — see helm/nexus-scheduler/values.yaml
+# for the actual deployment-time configuration surface and secret
+# documentation. This file only matters if this subchart is installed
+# standalone.
+
+image:
+  repository: postgres
+  tag: "16-alpine"
+  pullPolicy: IfNotPresent
+
+auth:
+  username: nexus
+  database: nexus_scheduler
+  # Pre-existing Secret (never created by this chart, REQUIREMENTS
+  # §9.1/§10 — "never baked into images", never generated here either).
+  # Expected key: `postgres-password`.
+  existingSecretName: "nexus-scheduler-postgresql"
+
+persistence:
+  enabled: true
+  size: 10Gi
+  # Empty = the cluster's default StorageClass.
+  storageClassName: ""
+
+resources:
+  requests: { cpu: "250m", memory: "256Mi" }
+  limits: { cpu: "1", memory: "1Gi" }
+
+# The upstream `postgres` image itself starts as root and drops
+# privileges internally (via gosu) unless launched as a non-root UID
+# from the start — forcing an untested runAsUser here risks a broken
+# first boot with no cluster available to verify against. Left at the
+# image's own default user for now; allowPrivilegeEscalation/dropped
+# capabilities apply regardless. Revisit alongside the rest of this
+# repo's placeholder-hardening TODOs (REQUIREMENTS §3/§9.1/§10) once
+# a real cluster is available to validate a locked-down UID against.
+podSecurityContext: {}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: redis
+description: >-
+  Minimal first-party Redis subchart (single-instance StatefulSet),
+  vendored directly in this repository rather than fetched from any
+  remote chart registry — REQUIREMENTS.md §9.1 requires the whole app to
+  install with zero network access, which ruled out depending on
+  charts.bitnami.com or any other external chart source at install (or
+  even `helm dependency update`) time. Deliberately does not replicate a
+  full-featured chart's scope (replication/sentinel, cluster mode,
+  metrics exporter, etc.) — this app only ever needs one Redis instance
+  (BullMQ's own queue + the session store), the same shape as
+  docker-compose.yml's local dev stack.
+type: application
+version: 0.1.0
+appVersion: "7"

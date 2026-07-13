@@ -166,8 +166,13 @@ Once the schema stabilizes, switch to real migrations
 
 - **Kubernetes**: `helm/nexus-scheduler/` — see REQUIREMENTS.md §9.1 and
   the chart's `NOTES.txt` for what Secrets must exist before installing.
+  PostgreSQL/Redis are bundled as first-party subcharts vendored at
+  `charts/postgresql`/`charts/redis` (not Bitnami's — see "Bundled,
+  air-gap-friendly PostgreSQL/Redis subcharts" below) — installing this
+  chart never requires network access to stand up either dependency.
   Not yet validated with `helm lint`/`helm template` in this environment
-  (no Helm CLI available here) — run that before any real deployment.
+  (no Helm CLI available here, and no real cluster to install against)
+  — run both before any real deployment.
 - **Container images**: `packages/{api,worker,pdf-service,frontend}/
   Dockerfile`, all built from the **repo root** as build context, e.g.:
   ```bash
@@ -824,6 +829,71 @@ if the security review calls for it.
   `dark`/`light` to `localStorage`, and confirmed a full page reload
   keeps the user's explicit choice rather than reverting to the system
   preference.
+
+- **Bundled, air-gap-friendly PostgreSQL/Redis subcharts.** The chart
+  previously declared its PostgreSQL/Redis dependencies against
+  Bitnami's real charts (`repository: https://charts.bitnami.com/bitnami`)
+  — meaning `helm dependency update`, and therefore `helm install` itself
+  for anyone who hadn't already vendored those charts, needed network
+  access to a remote chart registry. That's a hard requirement violation
+  for REQUIREMENTS §9.1's air-gapped target, not just a nice-to-have.
+  This sandbox's own network policy blocks both `charts.bitnami.com` and
+  `get.helm.sh` entirely (no `helm` CLI could even be installed here to
+  attempt `helm dependency update`), which ruled out actually vendoring
+  Bitnami's real chart archives from within this environment — so
+  instead:
+  - New first-party `charts/postgresql` and `charts/redis` subcharts
+    (single-instance StatefulSet + headless Service each, matching
+    `postgres:16-alpine`/`redis:7-alpine` — the same images
+    `docker-compose.yml`'s local dev stack already uses) are checked
+    directly into this repository. `Chart.yaml`'s `dependencies:` no
+    longer has a `repository:` field at all — Helm resolves a
+    same-name/same-version dependency from the local `charts/`
+    directory automatically when none is given, so `helm install`/`helm
+    package` never touch the network for these two dependencies.
+    Deliberately far smaller in scope than Bitnami's charts (no
+    replication, no metrics exporter, no cluster mode) — this app only
+    ever needs one instance of each, same as the Compose stack.
+  - **Secrets reorganized**: `DATABASE_URL`/`REDIS_URL` moved out of the
+    catch-all `secrets.appSecretName` into their own dedicated
+    `secrets.databaseSecretName`/`secrets.redisSecretName`, each with a
+    values.yaml comment documenting the exact expected key and
+    connection-string format. This applies whether PostgreSQL/Redis are
+    the bundled subcharts or bring-your-own external instances — the
+    app itself only ever reads from these two secrets either way. The
+    bundled subcharts additionally read their *own* operational
+    password from a separate pre-existing secret
+    (`postgresql.auth.existingSecretName`/`redis.auth.existingSecretName`,
+    expecting `postgres-password`/`redis-password` keys) — comments in
+    both `values.yaml` and `NOTES.txt` spell out that these are two
+    related-but-separate secrets an operator must populate consistently
+    (same password in both), since nothing here auto-generates or
+    cross-references one from the other, matching this chart's existing
+    "nothing is ever created or guessed by the chart itself" posture.
+  - Known simplification, called out directly in both subcharts'
+    `values.yaml`: neither forces a non-root `runAsUser` for its
+    container. The upstream `postgres` image starts as root and drops
+    privileges internally (via `gosu`) unless launched as a non-root UID
+    from the start, and `redis`'s image doesn't guarantee a stable UID
+    across tags — forcing either without a real cluster available in
+    this environment to verify the resulting boot behavior against
+    risked shipping an untested, possibly-broken first boot. Revisit
+    alongside this repo's other placeholder-hardening TODOs
+    (REQUIREMENTS §3/§9.1/§10) once a real cluster exists to validate
+    against.
+  - Verified as far as this environment allows (no Helm CLI, no real
+    cluster): every template across the parent chart and both new
+    subcharts — including the `ternary` Sprig function used in the
+    Redis StatefulSet — re-rendered cleanly
+    through a hand-built Go `text/template` harness (matching real
+    Helm's own template engine) against the actual merged values (parent
+    overrides applied over each subchart's own defaults, mirroring real
+    Helm subchart value passthrough), and every rendered document
+    validated as parseable YAML. `NOTES.txt` was rendered and read
+    through the same way. **Not verified**: an actual `helm
+    install`/`helm template`/`helm lint` run, or real container boot
+    behavior for either subchart — both require tooling/infrastructure
+    unavailable in this environment.
 
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
