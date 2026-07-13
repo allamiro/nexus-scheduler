@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   Button,
   Checkbox,
   Dialog,
@@ -86,6 +87,11 @@ export function JobNotificationsDialog({
             label="Attach the run's PDF report instead of inline text"
           />
         </Stack>
+        {save.isError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {save.error instanceof Error ? save.error.message : "Could not save notification settings."}
+          </Alert>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

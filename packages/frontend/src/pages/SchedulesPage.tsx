@@ -54,10 +54,20 @@ export function SchedulesPage() {
             divider
             secondaryAction={
               <Stack direction="row" spacing={1}>
-                <Button size="small" variant="contained" onClick={() => approve.mutate(schedule.id)}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={approve.isPending || reject.isPending}
+                  onClick={() => approve.mutate(schedule.id)}
+                >
                   Approve
                 </Button>
-                <Button size="small" color="error" onClick={() => reject.mutate(schedule.id)}>
+                <Button
+                  size="small"
+                  color="error"
+                  disabled={approve.isPending || reject.isPending}
+                  onClick={() => reject.mutate(schedule.id)}
+                >
                   Reject
                 </Button>
               </Stack>

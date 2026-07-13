@@ -226,11 +226,20 @@ export function ScheduleManagerDialog({
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["jobs", jobId, "schedules"] }),
   });
 
+  const hoursInvalid = !Number.isInteger(hours) || hours < 1;
+
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>Schedules</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
+          {(pauseSchedule.isError || resumeSchedule.isError || deleteSchedule.isError) && (
+            <Alert severity="error">
+              {(pauseSchedule.error ?? resumeSchedule.error ?? deleteSchedule.error) instanceof Error
+                ? (pauseSchedule.error ?? resumeSchedule.error ?? deleteSchedule.error)!.message
+                : "Action failed."}
+            </Alert>
+          )}
           <List dense>
             {schedulesQuery.data?.map((schedule) => (
               <ListItem
@@ -240,11 +249,19 @@ export function ScheduleManagerDialog({
                   <Stack direction="row" spacing={1}>
                     {schedule.approvalStatus === "APPROVED" &&
                       (schedule.paused ? (
-                        <Button size="small" onClick={() => resumeSchedule.mutate(schedule.id)}>
+                        <Button
+                          size="small"
+                          disabled={resumeSchedule.isPending}
+                          onClick={() => resumeSchedule.mutate(schedule.id)}
+                        >
                           Resume
                         </Button>
                       ) : (
-                        <Button size="small" onClick={() => pauseSchedule.mutate(schedule.id)}>
+                        <Button
+                          size="small"
+                          disabled={pauseSchedule.isPending}
+                          onClick={() => pauseSchedule.mutate(schedule.id)}
+                        >
                           Pause
                         </Button>
                       ))}
@@ -254,6 +271,7 @@ export function ScheduleManagerDialog({
                     <Button
                       size="small"
                       color="error"
+                      disabled={deleteSchedule.isPending}
                       onClick={async () => {
                         const ok = await confirm({
                           title: "Delete schedule?",
@@ -372,6 +390,9 @@ export function ScheduleManagerDialog({
                       type="number"
                       value={hours}
                       onChange={(e) => setHours(Number(e.target.value))}
+                      inputProps={{ min: 1 }}
+                      helperText="Minimum 1 hour"
+                      error={hoursInvalid}
                       fullWidth
                     />
                   )}
@@ -469,7 +490,11 @@ export function ScheduleManagerDialog({
               )}
 
               {(createSchedule.isError || updateSchedule.isError) && (
-                <Alert severity="error">Could not save schedule.</Alert>
+                <Alert severity="error">
+                  {(createSchedule.error ?? updateSchedule.error) instanceof Error
+                    ? (createSchedule.error ?? updateSchedule.error)!.message
+                    : "Could not save schedule."}
+                </Alert>
               )}
 
               <Stack direction="row" spacing={1}>
@@ -480,7 +505,8 @@ export function ScheduleManagerDialog({
                     updateSchedule.isPending ||
                     (type === "ONE_TIME" && !runAt) ||
                     (versionPinMode === "PINNED" && !pinnedPromptVersionId) ||
-                    (type === "RECURRING" && intervalKind === "every_n_minutes" && minutes < MIN_INTERVAL_MINUTES)
+                    (type === "RECURRING" && intervalKind === "every_n_minutes" && minutes < MIN_INTERVAL_MINUTES) ||
+                    (type === "RECURRING" && intervalKind === "every_n_hours" && hoursInvalid)
                   }
                   onClick={() => (editingScheduleId ? updateSchedule.mutate() : createSchedule.mutate())}
                 >

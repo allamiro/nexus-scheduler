@@ -195,6 +195,11 @@ export function ProjectsPage() {
                 ))}
               </Select>
             </FormControl>
+            {createProject.isError && (
+              <Alert severity="error">
+                {createProject.error instanceof Error ? createProject.error.message : "Could not create project."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -381,6 +386,11 @@ function ProjectDetailPanel({ projectId, onDeleted }: { projectId: string; onDel
                 ))}
               </Select>
             </FormControl>
+            {updateProject.isError && (
+              <Alert severity="error">
+                {updateProject.error instanceof Error ? updateProject.error.message : "Could not save project."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -552,6 +562,11 @@ function ProjectPromptsPanel({ projectId, canEdit }: { projectId: string; canEdi
               fullWidth
             />
             <VariableEditor variables={variables} onChange={setVariables} />
+            {createPrompt.isError && (
+              <Alert severity="error">
+                {createPrompt.error instanceof Error ? createPrompt.error.message : "Could not create prompt."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -699,6 +714,9 @@ function JobFormFields({
           type="number"
           value={values.timeoutSeconds}
           onChange={(e) => onChange({ ...values, timeoutSeconds: Number(e.target.value) })}
+          inputProps={{ min: 1, max: 3600 }}
+          helperText="1–3600"
+          error={!isValidJobTiming(values).timeoutSecondsValid}
           fullWidth
         />
         <TextField
@@ -706,11 +724,30 @@ function JobFormFields({
           type="number"
           value={values.maxRetries}
           onChange={(e) => onChange({ ...values, maxRetries: Number(e.target.value) })}
+          inputProps={{ min: 0, max: 5 }}
+          helperText="0–5"
+          error={!isValidJobTiming(values).maxRetriesValid}
           fullWidth
         />
       </Stack>
     </Stack>
   );
+}
+
+// Mirrors the backend's own bounds (packages/shared/src/schemas/job.ts) —
+// Number(e.target.value) on an emptied field is 0, which is in-range for
+// maxRetries but not a value the user actually chose, and clearing
+// timeoutSeconds the same way used to slip a Job through with a 0-second
+// timeout since neither field was included in any submit-disabled check.
+function isValidJobTiming(values: Pick<JobFormValues, "timeoutSeconds" | "maxRetries">): {
+  timeoutSecondsValid: boolean;
+  maxRetriesValid: boolean;
+} {
+  return {
+    timeoutSecondsValid:
+      Number.isInteger(values.timeoutSeconds) && values.timeoutSeconds >= 1 && values.timeoutSeconds <= 3600,
+    maxRetriesValid: Number.isInteger(values.maxRetries) && values.maxRetries >= 0 && values.maxRetries <= 5,
+  };
 }
 
 // Jobs live inside a Project the same way Prompts do — one call to
@@ -891,12 +928,25 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
             discoveredAgents={discoveredAgents}
             agentsQuery={agentsQuery}
           />
+          {createJob.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {createJob.error instanceof Error ? createJob.error.message : "Could not create job."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
           <Button
             variant="contained"
-            disabled={!createForm.name || !createForm.promptId || !createForm.agentId || !createForm.apiKeyId || createJob.isPending}
+            disabled={
+              !createForm.name ||
+              !createForm.promptId ||
+              !createForm.agentId ||
+              !createForm.apiKeyId ||
+              !isValidJobTiming(createForm).timeoutSecondsValid ||
+              !isValidJobTiming(createForm).maxRetriesValid ||
+              createJob.isPending
+            }
             onClick={() => createJob.mutate()}
           >
             Create
@@ -915,12 +965,25 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
             discoveredAgents={discoveredAgents}
             agentsQuery={agentsQuery}
           />
+          {updateJob.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {updateJob.error instanceof Error ? updateJob.error.message : "Could not save job."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditingJob(null)}>Cancel</Button>
           <Button
             variant="contained"
-            disabled={!editForm.name || !editForm.promptId || !editForm.agentId || !editForm.apiKeyId || updateJob.isPending}
+            disabled={
+              !editForm.name ||
+              !editForm.promptId ||
+              !editForm.agentId ||
+              !editForm.apiKeyId ||
+              !isValidJobTiming(editForm).timeoutSecondsValid ||
+              !isValidJobTiming(editForm).maxRetriesValid ||
+              updateJob.isPending
+            }
             onClick={() => updateJob.mutate()}
           >
             Save
@@ -1018,6 +1081,14 @@ function ProjectSharingPanel({ projectId }: { projectId: string }) {
     <Stack spacing={2}>
       <Typography variant="subtitle1">Sharing</Typography>
 
+      {(grant.isError || revoke.isError || updateAccessLevel.isError) && (
+        <Alert severity="error">
+          {(grant.error ?? revoke.error ?? updateAccessLevel.error) instanceof Error
+            ? (grant.error ?? revoke.error ?? updateAccessLevel.error)!.message
+            : "Action failed."}
+        </Alert>
+      )}
+
       <List dense>
         {aclQuery.data?.map((acl) => (
           <ListItem
@@ -1039,6 +1110,7 @@ function ProjectSharingPanel({ projectId }: { projectId: string }) {
                 <Button
                   size="small"
                   color="error"
+                  disabled={revoke.isPending}
                   onClick={async () => {
                     const ok = await confirm({
                       title: "Revoke access?",

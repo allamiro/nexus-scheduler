@@ -148,6 +148,11 @@ function WebhookDestinationsPanel() {
           {deleteError}
         </Alert>
       )}
+      {setActive.isError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {setActive.error instanceof Error ? setActive.error.message : "Could not update destination."}
+        </Alert>
+      )}
 
       <List dense>
         {destinationsQuery.data?.map((destination) => (
@@ -169,6 +174,7 @@ function WebhookDestinationsPanel() {
                 <Button
                   size="small"
                   color={destination.active ? "error" : "primary"}
+                  disabled={setActive.isPending}
                   onClick={() => setActive.mutate({ id: destination.id, active: !destination.active })}
                 >
                   {destination.active ? "Disable" : "Enable"}
@@ -218,6 +224,13 @@ function WebhookDestinationsPanel() {
               helperText="Must be an internal endpoint reachable from the Worker"
               fullWidth
             />
+            {createDestination.isError && (
+              <Alert severity="error">
+                {createDestination.error instanceof Error
+                  ? createDestination.error.message
+                  : "Could not create destination."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -238,6 +251,13 @@ function WebhookDestinationsPanel() {
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField label="Name" value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus fullWidth />
             <TextField label="URL" value={editUrl} onChange={(e) => setEditUrl(e.target.value)} fullWidth />
+            {updateDestination.isError && (
+              <Alert severity="error">
+                {updateDestination.error instanceof Error
+                  ? updateDestination.error.message
+                  : "Could not save destination."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -592,6 +612,9 @@ function SystemSettingsPanel() {
         </FormControl>
 
         {save.isSuccess && <Alert severity="success">Saved.</Alert>}
+        {save.isError && (
+          <Alert severity="error">{save.error instanceof Error ? save.error.message : "Could not save settings."}</Alert>
+        )}
         {testEmail.isSuccess && <Alert severity="success">Test email sent — check your inbox.</Alert>}
         {testEmail.isError && <Alert severity="error">Test email failed to send.</Alert>}
         {testSyslog.isSuccess && <Alert severity="success">Test syslog message sent.</Alert>}
@@ -826,6 +849,13 @@ function UserManagementPanel() {
           {deleteError}
         </Alert>
       )}
+      {(updateUser.isError || sendReset.isError) && (
+        <Alert severity="error" sx={{ mb: 1 }}>
+          {(updateUser.error ?? sendReset.error) instanceof Error
+            ? (updateUser.error ?? sendReset.error)!.message
+            : "Action failed."}
+        </Alert>
+      )}
 
       <List dense>
         {usersQuery.data?.map((u) => {
@@ -929,6 +959,11 @@ function UserManagementPanel() {
               No password is set here — the new user gets an email with a link to set their own,
               same as a self-service password reset.
             </Typography>
+            {createUser.isError && (
+              <Alert severity="error">
+                {createUser.error instanceof Error ? createUser.error.message : "Could not create user."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -958,6 +993,11 @@ function UserManagementPanel() {
             <Button size="small" onClick={() => setNewPassword(generatePassword())} sx={{ alignSelf: "flex-start" }}>
               Generate random password
             </Button>
+            {setPassword.isError && (
+              <Alert severity="error">
+                {setPassword.error instanceof Error ? setPassword.error.message : "Could not set password."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1153,6 +1193,11 @@ function CostRatesPanel() {
         <DialogTitle>New Cost Rate</DialogTitle>
         <DialogContent>
           <CostRateFormFields form={createForm} onChange={setCreateForm} />
+          {createRate.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {createRate.error instanceof Error ? createRate.error.message : "Could not create rate."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -1170,6 +1215,11 @@ function CostRatesPanel() {
         <DialogTitle>Edit Cost Rate</DialogTitle>
         <DialogContent>
           <CostRateFormFields form={editForm} onChange={setEditForm} />
+          {updateRate.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {updateRate.error instanceof Error ? updateRate.error.message : "Could not save rate."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditingRate(null)}>Cancel</Button>
@@ -1250,7 +1300,13 @@ function ClassificationLabelFormFields({
         label="Sort order"
         type="number"
         value={form.sortOrder}
-        onChange={(e) => onChange({ ...form, sortOrder: Number(e.target.value) })}
+        onChange={(e) => {
+          // Number("") is 0 (a legitimate sort order, unlike a cleared
+          // timeout/retry-count field), but a non-numeric paste shouldn't
+          // silently become NaN in state — guard against that case only.
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange({ ...form, sortOrder: n });
+        }}
         fullWidth
       />
       <FormControlLabel
@@ -1409,6 +1465,11 @@ function ClassificationLabelsPanel() {
         <DialogTitle>New Classification Label</DialogTitle>
         <DialogContent>
           <ClassificationLabelFormFields form={createForm} onChange={setCreateForm} />
+          {createLabel.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {createLabel.error instanceof Error ? createLabel.error.message : "Could not create label."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -1426,6 +1487,11 @@ function ClassificationLabelsPanel() {
         <DialogTitle>Edit Classification Label</DialogTitle>
         <DialogContent>
           <ClassificationLabelFormFields form={editForm} onChange={setEditForm} />
+          {updateLabel.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {updateLabel.error instanceof Error ? updateLabel.error.message : "Could not save label."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditLabel(null)}>Cancel</Button>

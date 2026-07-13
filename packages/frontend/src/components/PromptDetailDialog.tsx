@@ -199,6 +199,11 @@ export function PromptDetailDialog({ promptId, onClose }: { promptId: string; on
                     onChange={(e) => setEditTags(e.target.value)}
                     fullWidth
                   />
+                  {updateMeta.isError && (
+                    <Alert severity="error">
+                      {updateMeta.error instanceof Error ? updateMeta.error.message : "Could not save prompt."}
+                    </Alert>
+                  )}
                   <Stack direction="row" spacing={1}>
                     <Button
                       variant="contained"
@@ -261,6 +266,11 @@ export function PromptDetailDialog({ promptId, onClose }: { promptId: string; on
                     fullWidth
                   />
                   <VariableEditor variables={newVersionVariables} onChange={setNewVersionVariables} />
+                  {addVersion.isError && (
+                    <Alert severity="error">
+                      {addVersion.error instanceof Error ? addVersion.error.message : "Could not save version."}
+                    </Alert>
+                  )}
                   <Stack direction="row" spacing={1}>
                     <Button
                       variant="contained"

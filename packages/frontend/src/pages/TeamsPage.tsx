@@ -141,6 +141,11 @@ export function TeamsPage() {
                 <TextField {...params} label="Parent Team (optional — enables nesting)" />
               )}
             />
+            {createTeam.isError && (
+              <Alert severity="error">
+                {createTeam.error instanceof Error ? createTeam.error.message : "Could not create team."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -335,6 +340,11 @@ function TeamDetailPanel({ team, onDeleted }: { team: TeamDetail; onDeleted: () 
             fullWidth
             sx={{ mt: 1 }}
           />
+          {updateTeam.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {updateTeam.error instanceof Error ? updateTeam.error.message : "Could not rename team."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditOpen(false)}>Cancel</Button>

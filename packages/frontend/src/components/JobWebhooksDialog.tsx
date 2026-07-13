@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   Button,
   Checkbox,
   Dialog,
@@ -90,6 +91,11 @@ export function JobWebhooksDialog({ jobId, onClose }: { jobId: string; onClose: 
             </Typography>
           )}
         </Stack>
+        {save.isError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {save.error instanceof Error ? save.error.message : "Could not save webhook selections."}
+          </Alert>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

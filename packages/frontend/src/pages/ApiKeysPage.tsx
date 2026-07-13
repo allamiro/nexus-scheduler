@@ -7,6 +7,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Alert,
   FormControl,
   InputLabel,
   List,
@@ -125,6 +126,7 @@ export function ApiKeysPage() {
                   <Button
                     size="small"
                     color="error"
+                    disabled={revokeKey.isPending}
                     onClick={async () => {
                       const ok = await confirm({
                         title: "Revoke API key?",
@@ -150,6 +152,11 @@ export function ApiKeysPage() {
           <Typography color="text.secondary">No API keys yet.</Typography>
         )}
       </List>
+      {revokeKey.isError && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {revokeKey.error instanceof Error ? revokeKey.error.message : "Could not revoke key."}
+        </Alert>
+      )}
 
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>New API Key</DialogTitle>
@@ -193,6 +200,11 @@ export function ApiKeysPage() {
               fullWidth
               autoComplete="off"
             />
+            {createKey.isError && (
+              <Alert severity="error">
+                {createKey.error instanceof Error ? createKey.error.message : "Could not create key."}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -218,6 +230,11 @@ export function ApiKeysPage() {
             fullWidth
             sx={{ mt: 1 }}
           />
+          {renameKey.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {renameKey.error instanceof Error ? renameKey.error.message : "Could not rename key."}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRenamingKey(null)}>Cancel</Button>
