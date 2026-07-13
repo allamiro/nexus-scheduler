@@ -150,18 +150,27 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
       return;
     }
 
-    const [ownedProjects, jobsCreated, schedulesCreated, promptVersions, teamsCreated] = await Promise.all([
-      prisma.project.count({ where: { ownerId: user.id } }),
-      prisma.job.count({ where: { createdById: user.id } }),
-      prisma.schedule.count({ where: { createdById: user.id } }),
-      prisma.promptVersion.count({ where: { createdById: user.id } }),
-      prisma.team.count({ where: { createdById: user.id } }),
-    ]);
-    const blockers = ownedProjects + jobsCreated + schedulesCreated + promptVersions + teamsCreated;
+    const [ownedProjects, jobsCreated, schedulesCreated, promptVersions, teamsCreated, jobsUsingOwnedKeys] =
+      await Promise.all([
+        prisma.project.count({ where: { ownerId: user.id } }),
+        prisma.job.count({ where: { createdById: user.id } }),
+        prisma.schedule.count({ where: { createdById: user.id } }),
+        prisma.promptVersion.count({ where: { createdById: user.id } }),
+        prisma.team.count({ where: { createdById: user.id } }),
+        // ApiKey.owningUser cascades on User delete, but Job.apiKey has
+        // no onDelete (defaults to Restrict) — without this check, a
+        // user whose personal key is still attached to a Job would pass
+        // every check above and then fail with a raw FK violation once
+        // the cascade tries to delete that key out from under the Job.
+        prisma.job.count({ where: { apiKey: { ownerUserId: user.id } } }),
+      ]);
+    const blockers = ownedProjects + jobsCreated + schedulesCreated + promptVersions + teamsCreated + jobsUsingOwnedKeys;
     if (blockers > 0) {
       res.status(409).json({
         error:
-          "cannot delete — this user owns or created Projects, Jobs, Schedules, Prompt versions, or Teams; deactivate the account instead",
+          jobsUsingOwnedKeys > 0 && ownedProjects + jobsCreated + schedulesCreated + promptVersions + teamsCreated === 0
+            ? "cannot delete — a Job still uses this user's personal API key; reassign or delete that Job first"
+            : "cannot delete — this user owns or created Projects, Jobs, Schedules, Prompt versions, or Teams; deactivate the account instead",
       });
       return;
     }

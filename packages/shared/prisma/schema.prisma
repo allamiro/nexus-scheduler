@@ -268,7 +268,14 @@ model Job {
   prompt                Prompt          @relation(fields: [promptId], references: [id])
   agentId               String // LibreChat agent ID (§2.1)
   apiKeyId              String
-  apiKey                ApiKey          @relation(fields: [apiKeyId], references: [id])
+  // Explicit Restrict (was the implicit default) — a Job always needs a
+  // real key to run, so silently nulling it out or cascading the Job's
+  // own deletion when its key disappears are both worse than just
+  // blocking. This intentionally contradicts ApiKey.owningUser's
+  // onDelete: Cascade below it in this file; the users.ts DELETE route
+  // checks for exactly this combination before attempting the delete,
+  // rather than letting the two policies collide as a raw FK violation.
+  apiKey                ApiKey          @relation(fields: [apiKeyId], references: [id], onDelete: Restrict)
   timeoutSeconds         Int            @default(600) // default 10m, ceiling enforced in app logic (§2.1)
   maxRetries             Int            @default(2)
   // Email notification to the Job owner on completion/failure, §2.2 —
@@ -418,6 +425,18 @@ model CostRate {
   effectiveFrom             DateTime @default(now())
   createdAt                 DateTime @default(now())
 
+  // Prevents two rows from claiming the same agent's rate as of the
+  // same instant, which would make "the effective rate for agent X as
+  // of time T" order-dependent/non-deterministic (costCalculator.ts
+  // picks whichever row a query happens to return first). Note this
+  // constraint's Postgres semantics don't cover two *global-default*
+  // (agentId = null) rows landing on the exact same effectiveFrom —
+  // NULLs are never considered equal under a unique index — but that
+  // collision would require two creates at literally the same
+  // microsecond, a far narrower window than the same-agent case this
+  // closes.
+  @@unique([agentId, effectiveFrom])
+  @@index([agentId, effectiveFrom])
   @@map("cost_rates")
 }
 
