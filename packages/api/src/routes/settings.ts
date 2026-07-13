@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { updateAppSettingsSchema, encryptSecret } from "@nexus-scheduler/shared";
+import { updateAppSettingsSchema, encryptSecret, buildRfc5424Message, sendSyslogMessage } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent } from "../audit.js";
@@ -106,6 +107,44 @@ export function createSettingsRouter(config: AppConfig): Router {
         return;
       }
       res.status(502).json({ error: err instanceof Error ? err.message : "failed to send test email" });
+    }
+  });
+
+  router.post("/syslog/test", requireAuth, requireAdmin, async (req, res) => {
+    const settings = await getOrCreateSettings();
+    if (!settings.syslogEnabled || !settings.syslogHost || !settings.syslogPort) {
+      res.status(400).json({ error: "syslog is not configured — set host, port, and enable it first" });
+      return;
+    }
+
+    try {
+      const message = buildRfc5424Message({
+        eventId: randomUUID(),
+        timestamp: new Date(),
+        actorType: "USER",
+        actorId: req.session.user!.id,
+        actorEmail: req.session.user!.email,
+        action: "system_settings.syslog_test",
+        targetType: "system_setting",
+        targetId: String(SETTINGS_ID),
+        result: "SUCCESS",
+        errorMessage: null,
+        correlationId: null,
+        details: { note: "manually triggered test message" },
+        appName: "nexus-scheduler-api",
+      });
+      await sendSyslogMessage(
+        {
+          host: settings.syslogHost,
+          port: settings.syslogPort,
+          transport: settings.syslogTransport,
+          tls: settings.syslogTls,
+        },
+        message,
+      );
+      res.status(204).send();
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : "failed to send test syslog message" });
     }
   });
 

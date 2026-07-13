@@ -522,8 +522,34 @@ independent of Job/Schedule.
   specifies, so a wrong guess here degrades gracefully rather than
   breaking Job creation.
 
+- **Syslog audit-event mirror** (§7.1): both `audit.ts` files (API and
+  Worker) carried an explicit `TODO(§7): mirror this event to syslog`
+  since the very first audit-logging round — closed now. New
+  `packages/shared/src/syslog.ts` builds one RFC 5424 message per audit
+  event, per §7.1's exact field mapping (`TIMESTAMP`/`HOSTNAME`/
+  `APP-NAME`/`MSGID` plus the rest as `STRUCTURED-DATA` under a single
+  `nexusAudit@32473` SD-ID — `32473` is IANA's reserved
+  documentation-use Private Enterprise Number; a real SIEM integration
+  should swap in the deployment's own registered PEN), and sends it over
+  TCP (RFC 6587 octet-counting framing) or UDP, with TLS optional (RFC
+  5425) rather than mandatory. Config lives in the same `AppSettings`
+  singleton as SMTP: enabled/host/port/transport/TLS, admin-editable in
+  a new Syslog panel alongside SMTP, with a "send test message" button
+  (`POST /api/settings/syslog/test`) mirroring the existing SMTP one.
+  Best-effort by design, same posture as webhook/email delivery: a
+  syslog delivery failure is logged and never affects the audited
+  operation itself or the Postgres write, which remains the system of
+  record.
+  - Verified against real local TCP/UDP/TLS listeners (not just
+    typecheck): confirmed the RFC 5424 message structure, confirmed
+    RFC 6587's declared length prefix always matches the actual message
+    byte length over TCP, confirmed UDP delivers the exact same message
+    as a raw datagram, confirmed the TLS path both succeeds against a
+    trusted cert and correctly *rejects* an untrusted self-signed one
+    (i.e. certificate verification isn't accidentally disabled).
+
 Stubbed / not yet built: admin usage-report PDF export and recurring
 report email, an isolated PDF-renderer component, per-user concurrency
-limiting (only the global limit is enforced today), Prometheus metrics,
-and syslog output. See REQUIREMENTS.md for the full feature set these
-should implement.
+limiting (only the global limit is enforced today), and Prometheus
+metrics. See REQUIREMENTS.md for the full feature set these should
+implement.

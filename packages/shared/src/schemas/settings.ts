@@ -21,5 +21,11 @@ export const updateAppSettingsSchema = z.object({
   // be expressible as "field not present" rather than "matches current".
   smtpPassword: z.string().optional(),
   smtpFromAddress: z.string().email().nullable().optional(),
+  // Syslog audit-event mirror (§7.1) — independent of SMTP above.
+  syslogEnabled: z.boolean().optional(),
+  syslogHost: z.string().min(1).nullable().optional(),
+  syslogPort: z.number().int().positive().max(65535).nullable().optional(),
+  syslogTransport: z.enum(["TCP", "UDP"]).optional(),
+  syslogTls: z.boolean().optional(),
 });
 export type UpdateAppSettingsInput = z.infer<typeof updateAppSettingsSchema>;

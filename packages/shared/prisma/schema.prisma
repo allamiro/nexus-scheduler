@@ -420,6 +420,17 @@ model AppSettings {
   smtpUsername                   String?
   smtpEncryptedPassword          String?
   smtpFromAddress                String?
+  // Syslog audit-event mirror (§7.1) — RFC 5424 messages, RFC 6587-style
+  // framing over TCP or UDP, TLS optional (RFC 5425) rather than
+  // mandatory, matching environments that already terminate transport
+  // security at the network layer. Independent of the 14-day Postgres
+  // audit retention below — this is a live forwarding path to an
+  // external SIEM, not a second copy of local storage.
+  syslogEnabled                  Boolean         @default(false)
+  syslogHost                     String?
+  syslogPort                     Int?
+  syslogTransport                SyslogTransport @default(TCP)
+  syslogTls                      Boolean         @default(false)
   updatedAt                      DateTime @updatedAt
 
   @@map("app_settings")
@@ -437,6 +448,11 @@ enum ActorType {
 enum AuditResult {
   SUCCESS
   FAILURE
+}
+
+enum SyslogTransport {
+  TCP
+  UDP
 }
 
 model AuditEvent {

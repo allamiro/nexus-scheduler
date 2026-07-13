@@ -48,10 +48,6 @@ export function AdminPage() {
   return (
     <Stack spacing={4}>
       <Typography variant="h4">Admin</Typography>
-      <Typography color="text.secondary">
-        SMTP configuration (REQUIREMENTS §5) still needs to be built here — everything else in
-        §4-§8's admin surface is implemented below.
-      </Typography>
 
       <SystemSettingsPanel />
       <Divider />
@@ -194,6 +190,11 @@ interface AdminSettings {
   smtpUsername: string | null;
   smtpFromAddress: string | null;
   smtpPasswordSet: boolean;
+  syslogEnabled: boolean;
+  syslogHost: string | null;
+  syslogPort: number | null;
+  syslogTransport: "TCP" | "UDP";
+  syslogTls: boolean;
 }
 
 // Branding (§5) and the system-wide classification banner (§6) — one
@@ -220,6 +221,11 @@ function SystemSettingsPanel() {
   const [smtpUsername, setSmtpUsername] = useState("");
   const [smtpPassword, setSmtpPassword] = useState(""); // blank = leave unchanged
   const [smtpFromAddress, setSmtpFromAddress] = useState("");
+  const [syslogEnabled, setSyslogEnabled] = useState(false);
+  const [syslogHost, setSyslogHost] = useState("");
+  const [syslogPort, setSyslogPort] = useState("");
+  const [syslogTransport, setSyslogTransport] = useState<"TCP" | "UDP">("TCP");
+  const [syslogTls, setSyslogTls] = useState(false);
 
   // Settings arrive asynchronously — seed the form once they load rather
   // than leaving fields stuck empty.
@@ -237,6 +243,11 @@ function SystemSettingsPanel() {
     setSmtpSecure(s.smtpSecure);
     setSmtpUsername(s.smtpUsername ?? "");
     setSmtpFromAddress(s.smtpFromAddress ?? "");
+    setSyslogEnabled(s.syslogEnabled);
+    setSyslogHost(s.syslogHost ?? "");
+    setSyslogPort(s.syslogPort ? String(s.syslogPort) : "");
+    setSyslogTransport(s.syslogTransport);
+    setSyslogTls(s.syslogTls);
   }, [adminSettingsQuery.data]);
 
   const save = useMutation({
@@ -256,6 +267,11 @@ function SystemSettingsPanel() {
           smtpUsername: smtpUsername || null,
           ...(smtpPassword ? { smtpPassword } : {}),
           smtpFromAddress: smtpFromAddress || null,
+          syslogEnabled,
+          syslogHost: syslogHost || null,
+          syslogPort: syslogPort ? Number(syslogPort) : null,
+          syslogTransport,
+          syslogTls,
         }),
       }),
     onSuccess: () => {
@@ -267,6 +283,10 @@ function SystemSettingsPanel() {
 
   const testEmail = useMutation({
     mutationFn: () => apiFetch("/api/settings/smtp/test", { method: "POST" }),
+  });
+
+  const testSyslog = useMutation({
+    mutationFn: () => apiFetch("/api/settings/syslog/test", { method: "POST" }),
   });
 
   return (
@@ -341,15 +361,58 @@ function SystemSettingsPanel() {
           onChange={(e) => setSmtpFromAddress(e.target.value)}
         />
 
+        <Divider />
+        <Typography variant="subtitle1">Syslog</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Mirrors every audit event (REQUIREMENTS §7.1) as an RFC 5424 message to an external
+          log pipeline/SIEM, independent of the 14-day local audit retention.
+        </Typography>
+        <FormControlLabel
+          control={<Switch checked={syslogEnabled} onChange={(e) => setSyslogEnabled(e.target.checked)} />}
+          label="Enabled"
+        />
+        <Stack direction="row" spacing={2}>
+          <TextField label="Host" value={syslogHost} onChange={(e) => setSyslogHost(e.target.value)} fullWidth />
+          <TextField
+            label="Port"
+            type="number"
+            value={syslogPort}
+            onChange={(e) => setSyslogPort(e.target.value)}
+            sx={{ width: 120 }}
+          />
+        </Stack>
+        <FormControl fullWidth>
+          <InputLabel id="syslog-transport-label">Transport</InputLabel>
+          <Select
+            labelId="syslog-transport-label"
+            label="Transport"
+            value={syslogTransport}
+            onChange={(e) => setSyslogTransport(e.target.value as "TCP" | "UDP")}
+          >
+            <MenuItem value="TCP">TCP</MenuItem>
+            <MenuItem value="UDP">UDP</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControlLabel
+          control={<Switch checked={syslogTls} onChange={(e) => setSyslogTls(e.target.checked)} />}
+          label="Use TLS (TCP only, RFC 5425)"
+          disabled={syslogTransport !== "TCP"}
+        />
+
         {save.isSuccess && <Alert severity="success">Saved.</Alert>}
         {testEmail.isSuccess && <Alert severity="success">Test email sent — check your inbox.</Alert>}
         {testEmail.isError && <Alert severity="error">Test email failed to send.</Alert>}
+        {testSyslog.isSuccess && <Alert severity="success">Test syslog message sent.</Alert>}
+        {testSyslog.isError && <Alert severity="error">Test syslog message failed to send.</Alert>}
         <Stack direction="row" spacing={1}>
           <Button variant="contained" disabled={save.isPending} onClick={() => save.mutate()}>
             Save
           </Button>
           <Button variant="outlined" disabled={testEmail.isPending} onClick={() => testEmail.mutate()}>
             Send test email
+          </Button>
+          <Button variant="outlined" disabled={testSyslog.isPending} onClick={() => testSyslog.mutate()}>
+            Send test syslog message
           </Button>
         </Stack>
       </Stack>
