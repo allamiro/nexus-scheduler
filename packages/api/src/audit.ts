@@ -69,6 +69,7 @@ async function mirrorToSyslog(event: {
   result: string;
   errorMessage: string | null;
   correlationId: string | null;
+  sourceIp: string | null;
   details: unknown;
 }): Promise<void> {
   try {

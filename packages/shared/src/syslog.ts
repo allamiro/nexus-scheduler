@@ -38,6 +38,10 @@ export interface SyslogAuditFields {
   result: string;
   errorMessage?: string | null;
   correlationId?: string | null;
+  // Undefined for Worker-originated events (schedule fires, no HTTP
+  // request to read an IP from) — sdParam already omits the SD-PARAM
+  // entirely when this is null/undefined/empty.
+  sourceIp?: string | null;
   details?: unknown;
   appName: string; // emitting service, e.g. "nexus-scheduler-api" / "-worker"
 }
@@ -57,6 +61,28 @@ function escapeSdParamValue(value: string): string {
 function sdParam(name: string, value: string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "";
   return ` ${name}="${escapeSdParamValue(value)}"`;
+}
+
+// Common receivers cap a UDP datagram around ~2KB and silently
+// drop/truncate anything larger (and an oversized datagram risks IP
+// fragmentation/loss even before it gets there) — a verbose `details`
+// object with no size limit could produce an audit event that never
+// reaches the SIEM, with no error surfaced (UDP send resolves once the
+// datagram leaves this host, not once it's received). TCP has no such
+// hard ceiling, but applying the same budget everywhere keeps one
+// receiver's behavior from being a surprise depending on which
+// transport happens to be configured.
+const MAX_MESSAGE_BYTES = 2048;
+const TRUNCATION_MARKER = "...[truncated]";
+
+// Cuts `value` down to at most `maxBytes` UTF-8 bytes without slicing a
+// multi-byte character in half — Buffer#toString("utf8") already
+// replaces a trailing partial sequence with U+FFFD rather than
+// producing invalid output, so this is safe for any input.
+function truncateToByteLength(value: string, maxBytes: number): string {
+  const buf = Buffer.from(value, "utf8");
+  if (buf.byteLength <= maxBytes) return value;
+  return buf.subarray(0, Math.max(0, maxBytes)).toString("utf8");
 }
 
 // Builds one RFC 5424 message from an audit event, per REQUIREMENTS
@@ -89,6 +115,7 @@ export function buildRfc5424Message(fields: SyslogAuditFields): string {
     sdParam("result", fields.result) +
     sdParam("errorMessage", fields.errorMessage) +
     sdParam("correlationId", fields.correlationId) +
+    sdParam("sourceIp", fields.sourceIp) +
     `]`;
 
   const targetSuffix = fields.targetId ? `:${fields.targetId}` : "";
@@ -96,7 +123,20 @@ export function buildRfc5424Message(fields: SyslogAuditFields): string {
   const detailsSuffix = fields.details ? ` ${JSON.stringify(fields.details)}` : "";
   const msg = `${summary}${detailsSuffix}`;
 
-  return `<${pri}>${version} ${timestamp} ${hostname} ${fields.appName} ${procId} ${msgId} ${structuredData} ${msg}`;
+  const header = `<${pri}>${version} ${timestamp} ${hostname} ${fields.appName} ${procId} ${msgId} ${structuredData} `;
+  const full = `${header}${msg}`;
+  if (Buffer.byteLength(full, "utf8") <= MAX_MESSAGE_BYTES) {
+    return full;
+  }
+  // Truncate only the free-text MSG tail, never HEADER/STRUCTURED-DATA —
+  // those carry the fields a SIEM actually correlates/alerts on, so
+  // they're worth preserving over an oversized `details` blob. The
+  // marker below is what makes the truncation visible to whoever's
+  // reading the forwarded stream, instead of a silently clipped record.
+  const headerBytes = Buffer.byteLength(header, "utf8");
+  const markerBytes = Buffer.byteLength(TRUNCATION_MARKER, "utf8");
+  const msgBudget = Math.max(0, MAX_MESSAGE_BYTES - headerBytes - markerBytes);
+  return `${header}${truncateToByteLength(msg, msgBudget)}${TRUNCATION_MARKER}`;
 }
 
 // Sends one syslog message. Best-effort by design: callers must treat a
