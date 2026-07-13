@@ -42,7 +42,9 @@ export function VariableEditor({
       </Typography>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
         Declares which <code>{"{{name}}"}</code> placeholders this prompt accepts, beyond the
-        built-ins ({"{{date}}"}, {"{{datetime}}"}, {"{{schedule_name}}"}, {"{{run_id}}"}).
+        built-ins ({"{{date}}"}, {"{{datetime}}"}, {"{{schedule_name}}"}, {"{{run_id}}"},{" "}
+        {"{{owner_full_name}}"}, {"{{owner_given_name}}"}, {"{{owner_last_name}}"}, and{" "}
+        {"{{owner_email}}"} — the Job's owner, i.e. whoever created it).
       </Typography>
       <Stack spacing={1}>
         {variables.map((variable, index) => (

@@ -49,7 +49,13 @@ async function processRun(
   const run = await prisma.run.findUniqueOrThrow({
     where: { id: runId },
     include: {
-      job: { include: { apiKey: true, prompt: { include: { versions: true } } } },
+      job: {
+        include: {
+          apiKey: true,
+          createdBy: { select: { email: true, givenName: true, familyName: true, displayName: true } },
+          prompt: { include: { versions: true } },
+        },
+      },
       schedule: true,
     },
   });
@@ -98,7 +104,7 @@ async function processRun(
       const variableValues = (run.schedule?.variableValues as Record<string, string> | null) ?? {};
       const renderedPrompt = renderPromptTemplate(
         promptVersion.content,
-        { scheduleName: run.job.name, runId },
+        { scheduleName: run.job.name, runId, owner: run.job.createdBy },
         declaredVariables,
         variableValues,
       );

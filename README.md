@@ -980,6 +980,32 @@ if the security review calls for it.
     LibreChat calls succeed end to end against a real custom-CA LibreChat
     instance.
 
+- **`{{owner_*}}` built-in prompt variables.** Added four new built-ins
+  to `renderPromptTemplate` (`packages/worker/src/promptTemplate.ts`)
+  alongside the existing `{{date}}`/`{{datetime}}`/`{{schedule_name}}`/
+  `{{run_id}}`: `{{owner_full_name}}`, `{{owner_given_name}}`,
+  `{{owner_last_name}}`, `{{owner_email}}`. "Owner" here is the Job's
+  `createdBy` user — the same person the codebase already calls the "Job
+  owner" elsewhere (e.g. the per-job completion/failure email
+  notification, and the per-user concurrency-limit attribution in
+  `processor.ts`), so this reuses an existing concept rather than
+  introducing a new one. `owner_full_name` prefers `User.displayName`,
+  falls back to `givenName + familyName` if only those are set, and
+  falls back to `email` if the user record has no name fields populated
+  at all (givenName/familyName/displayName are all optional columns).
+  Like the pre-existing built-ins, these are resolved last and always
+  win over a same-named declared prompt variable or per-schedule
+  override value — a schedule can't spoof `{{owner_email}}` any more
+  than it could already spoof `{{run_id}}`.
+  `processor.ts`'s Run query now also selects `job.createdBy`'s
+  email/givenName/familyName/displayName (previously not fetched at
+  all) to supply this. Verified directly against the compiled output
+  with four real calls to `renderPromptTemplate`: full name resolution,
+  the givenName+familyName fallback, the email-only fallback when no
+  name fields are set, and confirmation that a declared variable/schedule
+  override named `owner_email` is silently overridden by the real value
+  rather than leaking through.
+
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
 implement, and each bullet above for the specific caveats/known
