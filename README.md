@@ -173,6 +173,18 @@ Once the schema stabilizes, switch to real migrations
   Not yet validated with `helm lint`/`helm template` in this environment
   (no Helm CLI available here, and no real cluster to install against)
   — run both before any real deployment.
+  A `pre-install,pre-upgrade` Helm hook Job (`templates/migration-job.yaml`)
+  runs `prisma db push` against `secrets.databaseSecretName` before
+  api/worker are (re)created — see "Database migration Helm hook" below.
+- **Reverse proxy**: `nginx.conf` at the repo root is a reference config
+  for the environment's pre-existing nginx (REQUIREMENTS §9.1 — this
+  chart doesn't deploy nginx itself); it proxies `/api`, `/auth`, and
+  `/healthz` to the `-api` Service and everything else to the
+  `-frontend` Service, matching `templates/ingress.yaml`'s routing.
+  Every upstream address and TLS cert path in it is a placeholder —
+  fill those in for the actual environment before use. Distinct from
+  `docker/nginx/nginx.conf`, which is Compose-only and much simpler
+  since it only ever has to resolve Docker's embedded DNS on one host.
 - **Container images**: `packages/{api,worker,pdf-service,frontend}/
   Dockerfile`, all built from the **repo root** as build context, e.g.:
   ```bash
