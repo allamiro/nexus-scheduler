@@ -1,8 +1,10 @@
 import { Router } from "express";
+import { Prisma } from "@nexus-scheduler/shared/prisma";
 import {
   createPromptSchema,
   updatePromptSchema,
   createPromptVersionSchema,
+  type CreatePromptVersionInput,
 } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -10,6 +12,57 @@ import { requireProjectAccess } from "../middleware/requireProjectAccess.js";
 import { requirePromptAccess } from "../middleware/requirePromptAccess.js";
 import { getAccessibleProjectIds } from "../access.js";
 import { recordAuditEvent } from "../audit.js";
+
+function isUniqueConflict(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+}
+
+// Read-latest-then-insert-N+1 outside a transaction lets two concurrent
+// creates both read the same latest versionNumber and both try to
+// insert N+1, violating (promptId, versionNumber)'s unique constraint —
+// one request would 500 instead of getting N+2. Retrying on that exact
+// conflict (re-reading the latest number fresh each attempt) is simpler
+// and cheaper than a serializable transaction for what's just an
+// auto-incrementing counter with a unique index as its safety net.
+// Verified directly under 20-way concurrent load on the same prompt —
+// a 5-attempt budget with no backoff wasn't enough (several requests
+// exhausted it and 500'd); jitter plus a larger budget converges
+// reliably, mirroring the fix needed for the same failure pattern in
+// classificationLabels.ts's isDefault race.
+const MAX_VERSION_CONFLICT_RETRIES = 10;
+
+function jitterDelay(attempt: number): Promise<void> {
+  const ms = Math.floor(Math.random() * 20 * attempt);
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function createNextPromptVersion(
+  promptId: string,
+  data: { content: string; variables: CreatePromptVersionInput["variables"]; createdById: string },
+) {
+  for (let attempt = 1; ; attempt++) {
+    const latest = await prisma.promptVersion.findFirst({
+      where: { promptId },
+      orderBy: { versionNumber: "desc" },
+    });
+    try {
+      return await prisma.promptVersion.create({
+        data: {
+          promptId,
+          versionNumber: (latest?.versionNumber ?? 0) + 1,
+          content: data.content,
+          variables: data.variables,
+          createdById: data.createdById,
+        },
+      });
+    } catch (err) {
+      if (!isUniqueConflict(err) || attempt >= MAX_VERSION_CONFLICT_RETRIES) {
+        throw err;
+      }
+      await jitterDelay(attempt);
+    }
+  }
+}
 
 // Mounted at /api/projects/:projectId/prompts (mergeParams) — create/list
 // scoped to one Project, gated the same way any other Project content
@@ -206,7 +259,7 @@ export function createPromptsRouter(): Router {
   // Every edit creates a new version rather than mutating content in
   // place (REQUIREMENTS.md §2.3) — prior versions stay intact so
   // schedules pinned to them are unaffected.
-  router.post("/:id/versions", requireAuth, requirePromptAccess("EDIT"), async (req, res) => {
+  router.post("/:id/versions", requireAuth, requirePromptAccess("EDIT"), async (req, res, next) => {
     const parsed = createPromptVersionSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -214,19 +267,21 @@ export function createPromptsRouter(): Router {
     }
     const user = req.session.user!;
 
-    const latest = await prisma.promptVersion.findFirst({
-      where: { promptId: req.params.id },
-      orderBy: { versionNumber: "desc" },
-    });
-    const version = await prisma.promptVersion.create({
-      data: {
-        promptId: req.params.id!,
-        versionNumber: (latest?.versionNumber ?? 0) + 1,
+    let version;
+    try {
+      version = await createNextPromptVersion(req.params.id!, {
         content: parsed.data.content,
         variables: parsed.data.variables,
         createdById: user.id,
-      },
-    });
+      });
+    } catch (err) {
+      if (isUniqueConflict(err)) {
+        res.status(409).json({ error: "too much concurrent activity creating a version — please retry" });
+        return;
+      }
+      next(err);
+      return;
+    }
     await prisma.prompt.update({ where: { id: req.params.id }, data: { updatedAt: new Date() } });
 
     await recordAuditEvent({
