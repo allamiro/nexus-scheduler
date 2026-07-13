@@ -54,6 +54,7 @@ flowchart TB
         FE[Frontend SPA<br/>static assets]
         API[Backend API<br/>auth · CRUD · audit access]
         WORKER[Scheduler / Worker<br/>fires due schedules,<br/>calls LibreChat, retries,<br/>enforces concurrency]
+        PDFSVC[PDF Renderer<br/>isolated service,<br/>no network egress]
     end
 
     subgraph data["Data Layer"]
@@ -65,9 +66,11 @@ flowchart TB
     NGINX --> API
     API <--> PG
     API <--> REDIS
+    API -- HTTP, in-cluster only --> PDFSVC
     WORKER <--> PG
     WORKER <--> REDIS
     WORKER -- REST, Bearer key --> LC[[LibreChat Agents API]]
+    WORKER -- HTTP, in-cluster only --> PDFSVC
 ```
 
 **Why API and Worker are separate containers**: the API serves interactive
@@ -76,14 +79,21 @@ independently (horizontally, via replica count) as job volume grows,
 without affecting UI responsiveness. Redis is the coordination point
 between them — see REQUIREMENTS.md §2.1 and §11.
 
+**Why the PDF Renderer is its own service, not a library**: it's the only
+component that launches a headless browser (REQUIREMENTS.md §2.5 calls
+for full isolation — its own pod, no network egress, independent crash-
+restart), so it's split out rather than linked into API/Worker directly.
+Both call it over HTTP; a `NetworkPolicy` (§5 below) enforces that only
+API/Worker pods can reach it and that it can reach nothing outbound.
+
 ### Component responsibilities
 
 | Component | Responsibility |
 |---|---|
 | Frontend (SPA) | Job/schedule/Project/Team UI, Prompt Library, admin settings, classification banner rendering |
-| Backend API | AuthN/AuthZ (OIDC + local), CRUD for jobs/schedules/Projects/Teams/prompts, audit log access, approval queue, reporting endpoints, on-demand PDF download |
-| Scheduler/Worker | Polls due schedules, enqueues/dequeues runs respecting concurrency limits, calls LibreChat, retries, computes cost, sends notifications/webhooks/emailed PDF reports, writes audit events |
-| PDF Renderer | Shared HTML-to-PDF rendering capability (in-process library or internal call, no network egress) used by both API (on-demand download) and Worker (emailed reports) — REQUIREMENTS.md §2.5 |
+| Backend API | AuthN/AuthZ (OIDC + local), CRUD for jobs/schedules/Projects/Teams/prompts, audit log access, approval queue, reporting endpoints, on-demand PDF download (via the PDF Renderer service) |
+| Scheduler/Worker | Polls due schedules, enqueues/dequeues runs respecting concurrency limits, calls LibreChat, retries, computes cost, sends notifications/webhooks/emailed PDF reports (via the PDF Renderer service), writes audit events, and sends a recurring admin usage-report email on its own schedule |
+| PDF Renderer | `packages/pdf-service` — an isolated internal-only service (headless Chromium via Playwright) that renders run reports and the admin usage report to PDF on request from the API or Worker over HTTP. No inbound route from outside the cluster, no outbound network access at all (REQUIREMENTS.md §2.5) |
 | PostgreSQL | System of record: see §5 data model |
 | Redis | Job queue + scheduling coordination across Worker replicas |
 | nginx | TLS termination + reverse proxy (pre-existing in prod; included in Compose for local parity) |
@@ -102,6 +112,7 @@ sequenceDiagram
     participant Q as Redis Queue
     participant W as Scheduler/Worker
     participant LC as LibreChat Agents API
+    participant PDF as PDF Renderer
     participant SMTP as SMTP
     participant WH as Webhook Destination
 
@@ -132,7 +143,8 @@ sequenceDiagram
     W->>DB: Write audit event (run.start / run.complete)
     opt Email notification configured
         opt PDF report attachment enabled
-            W->>W: Render PDF (branding + classification banner)
+            W->>PDF: POST /render/run-report (branding + classification banner)
+            PDF-->>W: PDF bytes
         end
         W->>SMTP: Send completion/failure email (optionally with PDF attached)
     end
@@ -175,9 +187,20 @@ erDiagram
 Key fields worth calling out explicitly (full detail in REQUIREMENTS.md):
 
 - `RUN`: `trigger_type` (scheduled/manual), `status`, `prompt_tokens`,
-  `completion_tokens`, `computed_cost`, `output`, timing fields.
+  `completion_tokens`, `computed_cost`, `output`, timing fields. Token
+  fields are populated from whichever of LibreChat's two observed
+  `usage` shapes the underlying provider returns (OpenAI-style
+  `prompt_tokens`/`completion_tokens`, or Anthropic-style
+  `input_tokens`/`output_tokens`).
 - `SCHEDULE`: `timezone` (IANA), `paused`, `approval_status`,
   `version_pin_mode` (pinned vs. always-latest).
+- `TEAM_MEMBERSHIP`: an `is_owner` flag — a Team can have one or more
+  owners, distinct from ordinary members, who alone (plus admins) can
+  rename/delete the Team or manage its membership.
+- `PROJECT`: `owner_id` is transferable after creation (owner- or
+  admin-only) via a dedicated endpoint, not the general Project-edit
+  path, so an edit-level collaborator can never grant themselves
+  ownership.
 - `AUDIT_EVENT`: see the proposed schema in REQUIREMENTS.md §7.1.
 
 ## 5. Deployment Topology — Kubernetes (Production)
@@ -202,17 +225,23 @@ flowchart TB
             W1[worker pod]
             W2[worker pod ...N]
         end
-        PG[("PostgreSQL<br/>Helm subchart or external")]
-        REDIS[("Redis<br/>Helm subchart or external")]
-        SEC[/K8s Secrets:<br/>DB creds, OIDC client secret,<br/>SMTP creds, key-encryption key/]
+        subgraph pdfpods["Deployment: pdf-service<br/>(NetworkPolicy: ingress from<br/>api/worker only, egress denied)"]
+            PDF1[pdf-service pod]
+            PDF2[pdf-service pod ...N]
+        end
+        PG[("PostgreSQL<br/>bundled first-party subchart<br/>(default) or external")]
+        REDIS[("Redis<br/>bundled first-party subchart<br/>(default) or external")]
+        SEC[/K8s Secrets:<br/>DB/Redis creds, OIDC client secret,<br/>SMTP creds, key-encryption key/]
     end
 
     NGINX --> SVC_API --> API1 & API2
     API1 & API2 --> PG
     API1 & API2 --> REDIS
+    API1 & API2 -- HTTP, in-cluster only --> PDF1 & PDF2
     W1 & W2 --> PG
     W1 & W2 --> REDIS
     W1 & W2 -- Bearer API key --> LC
+    W1 & W2 -- HTTP, in-cluster only --> PDF1 & PDF2
     API1 -. OIDC .-> KC
     API1 & W1 -. RFC 5424 .-> SIEM
     W1 -. SMTP .-> SMTPX
@@ -222,7 +251,20 @@ flowchart TB
 
 - Images relocatable to an internal/offline registry (REQUIREMENTS.md §3).
 - Runs in FIPS mode end to end (REQUIREMENTS.md §10).
-- `/healthz` and `/metrics` on both Deployments (REQUIREMENTS.md §10, §11).
+- `/healthz` and `/metrics` on all three Deployments (api, worker,
+  pdf-service — REQUIREMENTS.md §10, §11).
+- PostgreSQL/Redis are bundled by default as minimal first-party Helm
+  subcharts (`helm/nexus-scheduler/charts/{postgresql,redis}`) so a
+  default install needs no external dependency or network access to
+  stand them up; either can be swapped for an externally-managed
+  instance via a values toggle.
+- The LibreChat connection supports a custom CA bundle
+  (`librechat.tls.caBundle`) for environments where LibreChat's
+  certificate chains to an internal CA, and a TLS-validation-bypass
+  escape hatch for testing (`librechat.tls.insecureSkipVerify`).
+- `pdf-service` is the only component this chart applies a
+  `NetworkPolicy` to so far — everything else (api/worker/frontend/
+  postgresql/redis) has none defined yet (see §8).
 
 ## 6. Deployment Topology — Docker Compose (Local Dev/Test)
 
@@ -233,20 +275,27 @@ flowchart TB
         API2[nexus-api]
         W2[nexus-worker]
         FE2[nexus-frontend]
+        PDF2[nexus-pdf-service]
         PG2[(postgres)]
         REDIS2[(redis)]
         KC2[keycloak<br/>test realm]
-        MAIL[mailpit / mailhog]
+        MAIL[mailpit]
+        LC2[[librechat<br/>real local instance]]
+        MONGO2[(librechat-mongo)]
+        OLLAMA2[ollama<br/>qwen3:0.6b, or use<br/>a real Anthropic key]
     end
-    LC2[[LibreChat<br/>external or test instance]]
 
     NGINX2 --> FE2
     NGINX2 --> API2
     API2 --> PG2
     API2 --> REDIS2
+    API2 --> PDF2
     W2 --> PG2
     W2 --> REDIS2
+    W2 --> PDF2
     W2 -- Bearer API key --> LC2
+    LC2 --> MONGO2
+    LC2 --> OLLAMA2
     API2 -. OIDC .-> KC2
     W2 -. SMTP .-> MAIL
 ```
@@ -269,10 +318,20 @@ Full role/permission detail: REQUIREMENTS.md §4.
 
 ## 8. Open Items Affecting Architecture
 
-These are tracked as open questions in REQUIREMENTS.md §14 but are called
-out here because they affect the diagrams above once resolved:
-
-- Whether PostgreSQL/Redis run as Helm subcharts or as externally-managed
-  cluster services changes the boundary of the `ns` subgraph in §5.
-- Confirming LibreChat's `usage` response shape affects the `RUN` entity
-  in §4 (token fields).
+- **LibreChat `usage` response shape**: REQUIREMENTS.md §14 still lists
+  live confirmation against the target LibreChat deployment as open. The
+  `RUN` entity impact (§4) is no longer blocked on that answer either
+  way — the Worker now recognizes both the OpenAI-style and
+  Anthropic-style shapes LibreChat is known to pass through depending on
+  the underlying provider — but a live check is still worth doing to
+  catch a third shape neither branch handles.
+- **Cluster-wide `NetworkPolicy` posture**: only `pdf-service` (§5) has
+  one so far, scoped narrowly to the specific isolation requirement
+  REQUIREMENTS.md §2.5 calls out for it. api/worker/frontend/postgresql/
+  redis have no `NetworkPolicy` yet — broadening that posture is a
+  separate piece of work if a security review calls for it.
+- **Non-root UID for the bundled PostgreSQL/Redis subcharts**: both
+  currently run as their upstream images' default user rather than a
+  hardened non-root UID, deferred until a real cluster is available to
+  validate the resulting boot behavior against (REQUIREMENTS.md §3/§9.1/
+  §10's broader hardening baseline).
