@@ -602,6 +602,23 @@ if the security review calls for it.
   falls back to the original plain text input exactly as REQUIREMENTS
   specifies, so a wrong guess here degrades gracefully rather than
   breaking Job creation.
+  - **Shows the Agent's name, not just its ID**: the OpenAI-compatible
+    `/v1/models` convention only guarantees an `id` (bare model IDs have
+    no display name), so `listLibreChatAgents()`
+    (`packages/api/src/librechatDiscovery.ts`) also makes a best-effort
+    second call to LibreChat's own Agent Builder listing
+    (`GET /api/agents`, what its web UI uses for "My Agents", returning
+    real `name` fields) using the same Bearer API key, and merges names
+    in by ID. That second endpoint is normally guarded by LibreChat's
+    own session/JWT auth rather than Bearer API-key auth, so it may not
+    work at all — **also not independently confirmed against a live
+    deployment** — but any failure there is swallowed silently; the
+    picker still shows bare IDs exactly as before, it just won't have
+    friendlier names. Verified against a local stand-in HTTP server
+    covering three cases: both endpoints healthy (names shown), only the
+    models endpoint working (falls back to IDs, no crash), and the
+    models endpoint itself failing (discovery reported unavailable,
+    same as before this change).
 
 - **Syslog audit-event mirror** (§7.1): both `audit.ts` files (API and
   Worker) carried an explicit `TODO(§7): mirror this event to syslog`

@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getEffectiveTeamIds } from "../access.js";
 import { recordAuditEvent } from "../audit.js";
-import { listLibreChatAgentIds } from "../librechatDiscovery.js";
+import { listLibreChatAgents } from "../librechatDiscovery.js";
 import type { AppConfig } from "../config.js";
 
 // LibreChat API keys — entered per-user via the web UI, or held by a
@@ -192,8 +192,8 @@ export function createApiKeysRouter(config: AppConfig): Router {
 
     try {
       const decrypted = decryptSecret(key.encryptedKey, config.API_KEY_ENCRYPTION_KEY);
-      const agentIds = await listLibreChatAgentIds(config.LIBRECHAT_BASE_URL, decrypted);
-      res.json(agentIds);
+      const agents = await listLibreChatAgents(config.LIBRECHAT_BASE_URL, decrypted);
+      res.json(agents);
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : "agent discovery failed" });
     }

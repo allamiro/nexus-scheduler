@@ -504,6 +504,11 @@ interface JobFormValues {
   maxRetries: number;
 }
 
+interface DiscoveredAgent {
+  id: string;
+  name: string | null;
+}
+
 // Shared between the New Job and Edit Job dialogs so the agent-discovery
 // picker (REQUIREMENTS §2.1: offer a picker built from whichever Agents
 // the selected key can see, falling back to manual entry) only exists
@@ -513,14 +518,14 @@ function JobFormFields({
   onChange,
   prompts,
   apiKeys,
-  discoveredAgentIds,
+  discoveredAgents,
   agentsQuery,
 }: {
   values: JobFormValues;
   onChange: (next: JobFormValues) => void;
   prompts: Prompt[] | undefined;
   apiKeys: ApiKeyOption[] | undefined;
-  discoveredAgentIds: string[];
+  discoveredAgents: DiscoveredAgent[];
   agentsQuery: { isError: boolean; isLoading: boolean };
 }) {
   return (
@@ -562,7 +567,7 @@ function JobFormFields({
           ))}
         </Select>
       </FormControl>
-      {discoveredAgentIds.length > 0 ? (
+      {discoveredAgents.length > 0 ? (
         <FormControl fullWidth>
           <InputLabel id="job-agent-label">Agent</InputLabel>
           <Select
@@ -571,9 +576,9 @@ function JobFormFields({
             value={values.agentId}
             onChange={(e) => onChange({ ...values, agentId: e.target.value })}
           >
-            {discoveredAgentIds.map((id) => (
-              <MenuItem key={id} value={id}>
-                {id}
+            {discoveredAgents.map((agent) => (
+              <MenuItem key={agent.id} value={agent.id}>
+                {agent.name ? `${agent.name} (${agent.id})` : agent.id}
               </MenuItem>
             ))}
           </Select>
@@ -659,11 +664,11 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
   const activeApiKeyId = createOpen ? createForm.apiKeyId : editForm.apiKeyId;
   const agentsQuery = useQuery({
     queryKey: ["api-keys", activeApiKeyId, "agents"],
-    queryFn: () => apiFetch<string[]>(`/api/api-keys/${activeApiKeyId}/agents`),
+    queryFn: () => apiFetch<DiscoveredAgent[]>(`/api/api-keys/${activeApiKeyId}/agents`),
     enabled: !!activeApiKeyId,
     retry: false,
   });
-  const discoveredAgentIds = activeApiKeyId ? agentsQuery.data ?? [] : [];
+  const discoveredAgents = activeApiKeyId ? agentsQuery.data ?? [] : [];
 
   const createJob = useMutation({
     mutationFn: () =>
@@ -781,7 +786,7 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
             onChange={setCreateForm}
             prompts={promptsQuery.data}
             apiKeys={apiKeysQuery.data}
-            discoveredAgentIds={discoveredAgentIds}
+            discoveredAgents={discoveredAgents}
             agentsQuery={agentsQuery}
           />
         </DialogContent>
@@ -805,7 +810,7 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
             onChange={setEditForm}
             prompts={promptsQuery.data}
             apiKeys={apiKeysQuery.data}
-            discoveredAgentIds={discoveredAgentIds}
+            discoveredAgents={discoveredAgents}
             agentsQuery={agentsQuery}
           />
         </DialogContent>
