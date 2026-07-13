@@ -170,6 +170,23 @@ services:
       postgres:
         condition: service_healthy
 
+  # Isolated PDF-rendering component (§2.5) — the only place in the
+  # stack that runs headless Chromium. No ports published to the host;
+  # only the api/worker services reach it, over the compose network.
+  pdf-service:
+    build:
+      context: .
+      dockerfile: packages/pdf-service/Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 4100
+      LOG_LEVEL: debug
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4100/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
@@ -187,6 +204,7 @@ services:
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
       LIBRECHAT_BASE_URL: ${LIBRECHAT_BASE_URL}
+      PDF_SERVICE_URL: http://pdf-service:4100
       LOG_LEVEL: debug
     depends_on:
       postgres:
@@ -195,6 +213,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      pdf-service:
+        condition: service_healthy
     ports:
       - "3000:3000"
 
@@ -209,6 +229,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY}
       LIBRECHAT_BASE_URL: ${LIBRECHAT_BASE_URL}
+      PDF_SERVICE_URL: http://pdf-service:4100
       LOG_LEVEL: debug
     depends_on:
       postgres:
@@ -217,6 +238,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      pdf-service:
+        condition: service_healthy
 
   frontend:
     build:

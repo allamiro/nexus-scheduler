@@ -44,6 +44,13 @@ const envSchema = z.object({
   // dependency for the API to start.
   LIBRECHAT_BASE_URL: z.string().url().optional(),
 
+  // Internal-only PDF-rendering component (§2.5) — a separate service
+  // specifically so the API/Worker images don't need Playwright/Chromium
+  // and its egress-during-build footprint at all. Not reachable outside
+  // the cluster network; see helm/nexus-scheduler's pdf-service
+  // Deployment/Service/NetworkPolicy.
+  PDF_SERVICE_URL: z.string().url().default("http://localhost:4100"),
+
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 

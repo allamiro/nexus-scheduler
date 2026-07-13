@@ -9,6 +9,11 @@ const envSchema = z.object({
 
   LIBRECHAT_BASE_URL: z.string().url(),
 
+  // Internal-only PDF-rendering component (§2.5) — see the API's
+  // config.ts for the full rationale (same service, both processes call
+  // it as clients).
+  PDF_SERVICE_URL: z.string().url().default("http://localhost:4100"),
+
   // §2.1 concurrency/timeout defaults — admin-configurable in the DB
   // eventually; env vars are the bootstrap default until an admin
   // settings table/UI exists.

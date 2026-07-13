@@ -70,7 +70,7 @@ export function createApp(config: AppConfig, logger: Logger): Express {
   app.use("/api/jobs/:jobId/runs", createJobRunsRouter(runsQueue));
   app.use("/api/jobs", createJobsRouter());
   app.use("/api/schedules", createSchedulesRouter());
-  app.use("/api/runs", createRunsRouter());
+  app.use("/api/runs", createRunsRouter(config));
   app.use("/api/dashboard", createDashboardRouter());
   app.use("/api/users", createUsersRouter(config, logger));
   app.use("/api/classification-labels", createClassificationLabelsRouter());
@@ -78,7 +78,7 @@ export function createApp(config: AppConfig, logger: Logger): Express {
   app.use("/api/webhook-destinations", createWebhookDestinationsRouter(config));
   app.use("/api/settings", createSettingsRouter(config));
   app.use("/api/cost-rates", createCostRatesRouter());
-  app.use("/api/admin", createAdminReportsRouter());
+  app.use("/api/admin", createAdminReportsRouter(config));
 
   app.use(errorHandler(logger));
 

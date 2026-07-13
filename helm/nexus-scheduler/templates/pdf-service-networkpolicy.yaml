@@ -1,0 +1,42 @@
+# First NetworkPolicy in this chart — scoped narrowly to the one
+# component REQUIREMENTS §2.5 calls out for full isolation (a headless-
+# Chromium renderer that should have no network egress at all). Every
+# other component (api/worker/frontend/postgres/redis) has none defined
+# yet; broadening this posture cluster-wide is a separate piece of work
+# if the security review calls for it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nexus-scheduler.fullname" . }}-pdf-service
+  labels:
+    {{- include "nexus-scheduler.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pdf-service
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nexus-scheduler.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pdf-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the API and Worker call this service — never the frontend,
+    # never anything outside the cluster (no Ingress resource routes to
+    # it either, see pdf-service-service.yaml).
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "nexus-scheduler.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              {{- include "nexus-scheduler.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: worker
+      ports:
+        - port: {{ .Values.pdfService.port }}
+  # No egress rules at all: `renderHtmlToPdf` only ever calls
+  # `page.setContent()` on an already-built HTML string this process
+  # generated itself — it never navigates to a URL, local or remote —
+  # so there is nothing for this pod to legitimately reach outbound, not
+  # even DNS.
+  egress: []

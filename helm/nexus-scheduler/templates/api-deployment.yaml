@@ -47,6 +47,8 @@ spec:
               value: {{ .Values.oidc.redirectUri | quote }}
             - name: LIBRECHAT_BASE_URL
               value: {{ .Values.librechat.baseUrl | quote }}
+            - name: PDF_SERVICE_URL
+              value: "http://{{ include "nexus-scheduler.fullname" . }}-pdf-service:{{ .Values.pdfService.port }}"
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.appSecretName }}

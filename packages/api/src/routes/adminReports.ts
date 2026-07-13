@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { renderUsageReportPdf } from "@nexus-scheduler/pdf";
+import { requestUsageReportPdf } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent } from "../audit.js";
 import { getPublicAppSettings } from "./settings.js";
+import type { AppConfig } from "../config.js";
 
 type RunStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELLED" | "SKIPPED";
 
@@ -52,7 +53,7 @@ function csvField(value: string): string {
   return value;
 }
 
-export function createAdminReportsRouter(): Router {
+export function createAdminReportsRouter(config: AppConfig): Router {
   const router = Router();
 
   router.get("/usage-report", requireAuth, requireAdmin, async (req, res) => {
@@ -121,7 +122,7 @@ export function createAdminReportsRouter(): Router {
     const stats = await getUsageStats(from, to);
     const settings = await getPublicAppSettings();
 
-    const pdf = await renderUsageReportPdf({
+    const pdf = await requestUsageReportPdf(config.PDF_SERVICE_URL, {
       productName: settings.productName,
       primaryColor: settings.primaryColor,
       banner: {

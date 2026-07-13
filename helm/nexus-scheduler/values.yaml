@@ -13,25 +13,29 @@ image:
 api:
   replicaCount: 2
   port: 3000
-  # Bumped from the original 256Mi/512Mi baseline: on-demand PDF report
-  # rendering (REQUIREMENTS §2.5) launches a headless Chromium instance
-  # per request, which briefly needs meaningfully more headroom than the
-  # rest of the API process.
   resources:
-    requests: { cpu: "100m", memory: "384Mi" }
-    limits: { cpu: "1", memory: "1Gi" }
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "512Mi" }
 
 worker:
   replicaCount: 2
   healthPort: 3001
-  # Requests memory bumped (256Mi -> 384Mi) for the same reason as the
-  # API: a Job with attachPdfToEmail set (§2.2/§2.5) launches headless
-  # Chromium synchronously inside the run.
   resources:
-    requests: { cpu: "200m", memory: "384Mi" }
-    limits: { cpu: "1", memory: "1Gi" }
+    requests: { cpu: "200m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "512Mi" }
   # §2.1: worker replica count is the actual lever for concurrency beyond
   # the in-process GLOBAL_MAX_CONCURRENT_RUNS limit.
+
+# Isolated PDF-rendering component (§2.5) — the only place that launches
+# headless Chromium, hence the meaningfully higher memory request/limit
+# than api/worker now need. See pdf-service-networkpolicy.yaml for the
+# "no egress" enforcement this split enables.
+pdfService:
+  replicaCount: 2
+  port: 4100
+  resources:
+    requests: { cpu: "100m", memory: "384Mi" }
+    limits: { cpu: "1", memory: "1Gi" }
 
 frontend:
   replicaCount: 2

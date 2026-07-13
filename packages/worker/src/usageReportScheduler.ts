@@ -1,4 +1,4 @@
-import { renderUsageReportPdf } from "@nexus-scheduler/pdf";
+import { requestUsageReportPdf } from "@nexus-scheduler/shared";
 import { prisma } from "./db.js";
 import { sendEmail, SmtpNotConfiguredError, type EmailAttachment } from "./email.js";
 import { recordAuditEvent } from "./audit.js";
@@ -57,7 +57,7 @@ export function startUsageReportLoop(config: WorkerConfig, logger: Logger): Node
       }
 
       const stats = await getUsageStats(periodStart, now);
-      const pdf = await renderUsageReportPdf({
+      const pdf = await requestUsageReportPdf(config.PDF_SERVICE_URL, {
         productName: settings.productName,
         primaryColor: settings.primaryColor,
         banner: {

@@ -16,3 +16,4 @@ export * from "./schemas/user.js";
 export * from "./schemas/localAuth.js";
 export * from "./queue.js";
 export * from "./syslog.js";
+export * from "./pdfServiceClient.js";

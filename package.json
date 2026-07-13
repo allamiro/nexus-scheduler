@@ -6,6 +6,7 @@
   "workspaces": [
     "packages/shared",
     "packages/pdf",
+    "packages/pdf-service",
     "packages/api",
     "packages/worker",
     "packages/frontend"
@@ -15,7 +16,7 @@
     "npm": ">=10"
   },
   "scripts": {
-    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/pdf && npm run build --workspace=packages/api && npm run build --workspace=packages/worker && npm run build --workspace=packages/frontend",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/pdf && npm run build --workspace=packages/pdf-service && npm run build --workspace=packages/api && npm run build --workspace=packages/worker && npm run build --workspace=packages/frontend",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",

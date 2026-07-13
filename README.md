@@ -168,12 +168,16 @@ Once the schema stabilizes, switch to real migrations
   the chart's `NOTES.txt` for what Secrets must exist before installing.
   Not yet validated with `helm lint`/`helm template` in this environment
   (no Helm CLI available here) — run that before any real deployment.
-- **Container images**: `packages/{api,worker,frontend}/Dockerfile`, all
-  built from the **repo root** as build context, e.g.:
+- **Container images**: `packages/{api,worker,pdf-service,frontend}/
+  Dockerfile`, all built from the **repo root** as build context, e.g.:
   ```bash
   docker build -f packages/api/Dockerfile -t nexus-scheduler-api .
   ```
-  All three currently use `node:20-slim` / `nginx-unprivileged` as
+  `pdf-service` is the one image with headless Chromium in it — the API
+  and Worker images don't need Playwright at all, since they call
+  `pdf-service` over HTTP instead of rendering in-process (§2.5; see
+  "Isolated PDF-rendering component" below).
+  All four currently use `node:20-slim` / `nginx-unprivileged` as
   placeholder base images — REQUIREMENTS.md §3/§9.1/§10 call for Iron
   Bank images and DISA STIG hardening where available; swap the base
   images before this goes near a real environment.
@@ -185,7 +189,8 @@ build in this environment):
 - Prisma schema modeling the full data model from ARCHITECTURE.md §4
 - OIDC login flow (Keycloak client-role → app role mapping, session
   creation) — REQUIREMENTS.md §4
-- Audit event writer (Postgres only — syslog/RFC 5424 mirror is a TODO)
+- Audit event writer (Postgres, plus a best-effort RFC 5424 syslog
+  mirror — see "Syslog audit-event mirror" below)
 - Scheduler tick loop (due-schedule polling, missed-fire skip logic,
   next-fire-time computation) and a BullMQ run processor with
   retry/backoff, cost calculation, and the LibreChat Agents API adapter
@@ -395,10 +400,11 @@ though the payload's `status` field lets a receiver filter client-side.
 
 - **PDF report generation — on-demand run reports** (§2.5): a new
   `@nexus-scheduler/pdf` workspace package wraps Playwright headless
-  Chromium (`page.pdf()`), the engine REQUIREMENTS recommends, and is
-  used in-process by the API rather than as the fully isolated
-  separate-pod component §2.5 describes as the ideal — see the known
-  simplification below.
+  Chromium (`page.pdf()`), the engine REQUIREMENTS recommends. Rendering
+  itself runs in the isolated `pdf-service` component (its own image/
+  Deployment/NetworkPolicy — see "Isolated PDF-rendering component"
+  further down); the API calls it over HTTP via
+  `@nexus-scheduler/shared`'s `requestRunReportPdf()`.
   - `GET /api/runs/:id/pdf` (behind `requireRunAccess`, same as the
     run-detail route) renders a run's stored output as a PDF: job name,
     run ID/status/trigger/timestamps/token counts/cost, and the
@@ -425,31 +431,56 @@ though the payload's `status` field lets a receiver filter client-side.
   - Frontend: a "Download PDF" action on each run's expanded detail in
     `RunHistoryDialog`, a plain same-origin link (session cookie carries
     auth) rather than a fetch+blob dance.
-  - Docker: the API image now builds `packages/pdf` and runs
-    `playwright install --with-deps chromium` in its runtime stage
+  - Docker/K8s: only the `pdf-service` image builds `packages/pdf` and
+    runs `playwright install --with-deps chromium` in its runtime stage
     (installed to a world-readable `/opt/pw-browsers` so the non-root
     `nexus` user can still launch it). The `playwright` dependency is
     pinned to an exact version (not `^`) since each Playwright release
     is tied to a specific bundled Chromium build — letting it float
     could silently drift the installed browser out from under a pinned
-    container layer. Helm's default API resource requests/limits were
-    bumped (256Mi/512Mi → 384Mi/1Gi memory, 500m → 1 CPU limit) since a
-    headless Chromium launch briefly needs real headroom.
+    container layer.
 
-Known simplification: REQUIREMENTS §2.5 recommends the PDF renderer run
-as a fully isolated component — its own pod, no network egress by
-`NetworkPolicy`, independent crash-restart — separate from both the API
-and Worker. This round implements it as an in-process library inside the
-API instead (ARCHITECTURE.md's container table already listed "in-
-process library or internal call" as an explicit alternative to a
-separate service). That's a real gap from the hardened target: a bug in
-the renderer takes down an API replica rather than an isolated
-component, and there's no `NetworkPolicy` yet actually enforcing "no
-egress" for it (nothing in this repo defines K8s `NetworkPolicy`
-resources at all yet, for any component). Splitting rendering into its
-own internal-only service, with its own Deployment/Service/NetworkPolicy
-in the Helm chart, is a reasonable following piece if the security
-review calls for it.
+- **Isolated PDF-rendering component** (§2.5: "its own pod, no network
+  egress by `NetworkPolicy`, independent crash-restart — separate from
+  both the API and Worker"): originally shipped as an in-process library
+  inside the API (ARCHITECTURE.md's container table did list that as an
+  explicit alternative), later split out into its own service:
+  - New `packages/pdf-service` workspace: a small Express app
+    (`POST /render/run-report`, `POST /render/usage-report`,
+    `GET /healthz`/`/readyz`/`/metrics`) that's the only thing in the
+    repo importing `@nexus-scheduler/pdf` (and therefore the only image
+    with Chromium in it) — the API and Worker call it over HTTP via
+    `@nexus-scheduler/shared/pdfServiceClient.ts` instead of rendering
+    in-process. Request bodies are zod-validated at this boundary even
+    though every caller is internal.
+  - Unauthenticated by design: the only two callers (API, Worker) are
+    already inside the same trust boundary, and a NetworkPolicy is what
+    actually enforces "only they can reach it," not app-layer auth.
+  - `helm/nexus-scheduler`: new `pdf-service` Deployment/Service, and
+    this repo's **first** `NetworkPolicy` — scoped narrowly to this one
+    component rather than attempting a cluster-wide posture in the same
+    pass. Ingress is allowed only from the api/worker pod selectors;
+    egress is `[]` (deny-all, not even DNS), since
+    `renderHtmlToPdf()` only ever calls `page.setContent()` on an
+    already-built HTML string it generated itself — it never navigates
+    to a URL, so there's nothing for this pod to legitimately reach
+    outbound. Helm's default API/Worker resource requests/limits were
+    reverted to their pre-Chromium baseline (256Mi/512Mi memory, 1 CPU
+    limit) now that neither launches it; `pdfService` in `values.yaml`
+    carries the bumped 384Mi/1Gi budget instead.
+  - Verified as far as this environment allows: real HTTP round-trips
+    against a running `pdf-service` process (both `/render/run-report`
+    and `/render/usage-report`, plus a malformed-body 400 case) actually
+    produced valid PDF bytes; full clean rebuild/typecheck across all
+    six packages; every Helm template (existing and new) re-rendered
+    with Go's own `text/template` engine against real `values.yaml` and
+    validated as parseable YAML, including the new `NetworkPolicy`'s
+    `podSelector`/`ingress`/`egress` structure — `helm template`/`helm
+    lint` themselves were still not run (no Helm CLI available in this
+    environment; see the Deployment section above). **Not verified**: an
+    actual `docker build` of `packages/pdf-service/Dockerfile`, or a
+    real in-cluster NetworkPolicy enforcement test — both require
+    infrastructure this environment doesn't have network access to.
 
 - **Job completion/failure email notifications, with PDF attachment**
   (§2.2/§2.5): the Worker's `processor.ts` had an explicit `TODO` at the
@@ -654,8 +685,9 @@ if the security review calls for it.
     script's atomicity actually holds under real concurrent load
     (exactly 5 succeeded, not more).
 
-Stubbed / not yet built: an isolated PDF-renderer component (see the
-"Known simplification" note above — splitting rendering into its own
-no-egress pod/service rather than an in-process library inside the API
-and Worker). See REQUIREMENTS.md for the full feature set this should
-implement.
+Stubbed / not yet built: nothing outstanding from this list as of this
+round — see REQUIREMENTS.md for the full feature set the app should
+implement, and each bullet above for the specific caveats/known
+simplifications still worth a look (e.g. the one-time-schedule timezone
+picker, webhook retry policy, and the various "not independently
+verified against a live LibreChat/SMTP/syslog endpoint" notes).

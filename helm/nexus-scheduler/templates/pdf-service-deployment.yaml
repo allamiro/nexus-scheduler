@@ -1,61 +1,54 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "nexus-scheduler.fullname" . }}-worker
+  name: {{ include "nexus-scheduler.fullname" . }}-pdf-service
   labels:
     {{- include "nexus-scheduler.labels" . | nindent 4 }}
-    app.kubernetes.io/component: worker
+    app.kubernetes.io/component: pdf-service
 spec:
-  replicas: {{ .Values.worker.replicaCount }}
+  replicas: {{ .Values.pdfService.replicaCount }}
   selector:
     matchLabels:
       {{- include "nexus-scheduler.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: worker
+      app.kubernetes.io/component: pdf-service
   template:
     metadata:
       labels:
         {{- include "nexus-scheduler.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: worker
+        app.kubernetes.io/component: pdf-service
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
-        prometheus.io/port: {{ .Values.worker.healthPort | quote }}
+        prometheus.io/port: {{ .Values.pdfService.port | quote }}
     spec:
       serviceAccountName: {{ include "nexus-scheduler.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: worker
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}-worker:{{ .Values.image.tag }}"
+        - name: pdf-service
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}-pdf-service:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
-            - containerPort: {{ .Values.worker.healthPort }}
+            - containerPort: {{ .Values.pdfService.port }}
           env:
             - name: NODE_ENV
               value: "production"
-            - name: HEALTH_PORT
-              value: {{ .Values.worker.healthPort | quote }}
+            - name: PORT
+              value: {{ .Values.pdfService.port | quote }}
             - name: LOG_LEVEL
               value: "info"
-            - name: LIBRECHAT_BASE_URL
-              value: {{ .Values.librechat.baseUrl | quote }}
-            - name: PDF_SERVICE_URL
-              value: "http://{{ include "nexus-scheduler.fullname" . }}-pdf-service:{{ .Values.pdfService.port }}"
-          envFrom:
-            - secretRef:
-                name: {{ .Values.secrets.appSecretName }}
           livenessProbe:
-            httpGet: { path: /healthz, port: {{ .Values.worker.healthPort }} }
+            httpGet: { path: /healthz, port: {{ .Values.pdfService.port }} }
             initialDelaySeconds: 5
             periodSeconds: 15
           readinessProbe:
-            httpGet: { path: /readyz, port: {{ .Values.worker.healthPort }} }
+            httpGet: { path: /readyz, port: {{ .Values.pdfService.port }} }
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
-            {{- toYaml .Values.worker.resources | nindent 12 }}
+            {{- toYaml .Values.pdfService.resources | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp

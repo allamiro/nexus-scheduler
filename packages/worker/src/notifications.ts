@@ -1,4 +1,4 @@
-import { renderRunReportPdf } from "@nexus-scheduler/pdf";
+import { requestRunReportPdf } from "@nexus-scheduler/shared";
 import { prisma } from "./db.js";
 import { recordAuditEvent } from "./audit.js";
 import { sendEmail, SmtpNotConfiguredError, type EmailAttachment } from "./email.js";
@@ -34,7 +34,7 @@ export async function sendRunNotificationEmail(
     if (job.attachPdfToEmail) {
       const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
       const label = job.project.classificationLabel;
-      const pdf = await renderRunReportPdf({
+      const pdf = await requestRunReportPdf(config.PDF_SERVICE_URL, {
         productName: settings?.productName ?? "Nexus Scheduler",
         primaryColor: settings?.primaryColor ?? "#1976d2",
         banner: {

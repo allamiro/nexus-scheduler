@@ -1,13 +1,13 @@
 import { Router } from "express";
 import type { Queue } from "bullmq";
-import type { RunJobData } from "@nexus-scheduler/shared";
-import { renderRunReportPdf } from "@nexus-scheduler/pdf";
+import { type RunJobData, requestRunReportPdf } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireJobAccess } from "../middleware/requireJobAccess.js";
 import { requireRunAccess } from "../middleware/requireRunAccess.js";
 import { recordAuditEvent } from "../audit.js";
 import { getPublicAppSettings } from "./settings.js";
+import type { AppConfig } from "../config.js";
 
 // Mounted at /api/jobs/:jobId/runs (mergeParams) — same access convention
 // as Schedules: READ to view history, EDIT to trigger a manual run
@@ -69,7 +69,7 @@ export function createJobRunsRouter(queue: Queue<RunJobData>): Router {
 
 // Mounted at /api/runs — run-id-scoped read access. Access is entirely
 // inherited from the Run's Job's Project (requireRunAccess).
-export function createRunsRouter(): Router {
+export function createRunsRouter(config: AppConfig): Router {
   const router = Router();
 
   router.get("/:id", requireAuth, requireRunAccess("READ"), async (req, res) => {
@@ -99,7 +99,7 @@ export function createRunsRouter(): Router {
     const settings = await getPublicAppSettings();
     const label = run.job.project.classificationLabel;
 
-    const pdf = await renderRunReportPdf({
+    const pdf = await requestRunReportPdf(config.PDF_SERVICE_URL, {
       productName: settings.productName,
       primaryColor: settings.primaryColor,
       banner: {
