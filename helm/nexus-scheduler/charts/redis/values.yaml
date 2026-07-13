@@ -13,7 +13,9 @@ image:
 auth:
   # Pre-existing Secret (never created by this chart, REQUIREMENTS
   # §9.1/§10 — "never baked into images", never generated here either).
-  # Expected key: `redis-password`.
+  # Expected key: `password` — this instance boots directly from it
+  # (--requirepass), and the parent chart reads the same secret to build
+  # the app's own REDIS_URL, so there's exactly one place holding it.
   existingSecretName: "nexus-scheduler-redis"
 
 persistence:

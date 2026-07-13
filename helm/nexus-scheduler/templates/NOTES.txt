@@ -13,24 +13,18 @@ exist in this namespace (none are created by this chart — REQUIREMENTS
       and roll the Deployment to recover admin access)
   - {{ .Values.secrets.oidcSecretName }}
       keys: OIDC_CLIENT_SECRET
-  - {{ .Values.secrets.databaseSecretName }}
-      keys: DATABASE_URL (one full connection string — see values.yaml's
-      comment on this field for the exact format)
-  - {{ .Values.secrets.redisSecretName }}
-      keys: REDIS_URL (one full connection string — see values.yaml's
-      comment on this field for the exact format)
-{{- if .Values.postgresql.enabled }}
   - {{ .Values.postgresql.auth.existingSecretName }}
-      keys: postgres-password (this bundled PostgreSQL instance's own
-      password — must match what you put in {{ .Values.secrets.databaseSecretName }}'s
-      DATABASE_URL above; nothing cross-references the other automatically)
-{{- end }}
-{{- if .Values.redis.enabled }}
+      keys: username, password, database
+      (DATABASE_URL is built automatically at pod start from these —
+      see values.yaml's postgresql.auth comment. Used both to boot the
+      bundled PostgreSQL instance, when enabled, and by the app itself;
+      only this one secret to manage, not two kept in sync by hand.
+      Avoid URL-reserved characters — @ : / ? # % — in these values.)
   - {{ .Values.redis.auth.existingSecretName }}
-      keys: redis-password (this bundled Redis instance's own password —
-      must match what you put in {{ .Values.secrets.redisSecretName }}'s
-      REDIS_URL above; nothing cross-references the other automatically)
-{{- end }}
+      keys: password
+      (REDIS_URL is built automatically the same way — see values.yaml's
+      redis.auth comment. Same one-secret, no-URL-reserved-characters
+      notes as above apply.)
 
 SMTP (§5) is not a K8s Secret — configure it from the Admin UI after
 first login; it's stored (password encrypted) in the app's own database.

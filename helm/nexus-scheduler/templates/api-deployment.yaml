@@ -62,15 +62,13 @@ spec:
             - name: NODE_TLS_REJECT_UNAUTHORIZED
               value: "0"
             {{- end }}
+            {{- include "nexus-scheduler.databaseEnv" . | nindent 12 }}
+            {{- include "nexus-scheduler.redisEnv" . | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.appSecretName }}
             - secretRef:
                 name: {{ .Values.secrets.oidcSecretName }}
-            - secretRef:
-                name: {{ .Values.secrets.databaseSecretName }}
-            - secretRef:
-                name: {{ .Values.secrets.redisSecretName }}
           livenessProbe:
             httpGet: { path: /healthz, port: {{ .Values.api.port }} }
             initialDelaySeconds: 5

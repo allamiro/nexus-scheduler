@@ -67,6 +67,5 @@ spec:
             # not an always-on service, so the tradeoff is acceptable
             # here specifically.
             readOnlyRootFilesystem: false
-          envFrom:
-            - secretRef:
-                name: {{ .Values.secrets.databaseSecretName }}
+          env:
+            {{- include "nexus-scheduler.databaseEnv" . | nindent 12 }}

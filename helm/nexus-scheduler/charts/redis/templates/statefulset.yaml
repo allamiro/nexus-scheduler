@@ -28,7 +28,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.auth.existingSecretName | quote }}
-                  key: redis-password
+                  key: password
           # $(REDIS_PASSWORD) is Kubernetes' own env-var-in-command
           # substitution (resolved by the kubelet, not a shell) — the
           # literal, unresolved text is all that ever appears in

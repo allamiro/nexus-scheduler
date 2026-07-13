@@ -1006,6 +1006,61 @@ if the security review calls for it.
   override named `owner_email` is silently overridden by the real value
   rather than leaking through.
 
+- **Auto-built DATABASE_URL/REDIS_URL from discrete secret fields.**
+  Previously an operator had to hand-compose a full `postgresql://...`/
+  `redis://...` connection string themselves and store it in
+  `secrets.databaseSecretName`/`secrets.redisSecretName` — redundant
+  with the bundled subcharts' own separate `postgres-password`/
+  `redis-password` secrets, which had to be kept in sync by hand with
+  no cross-referencing. Replaced both: `postgresql.auth.existingSecretName`
+  now holds `username`/`password`/`database` keys, and
+  `redis.auth.existingSecretName` holds `password` — used both to boot
+  the bundled subcharts (when enabled) *and* by api/worker/the migration
+  Job to build `DATABASE_URL`/`REDIS_URL` themselves, so there's exactly
+  one secret per datastore instead of two. `secrets.databaseSecretName`/
+  `secrets.redisSecretName` are removed from `values.yaml` entirely.
+  - New `templates/_helpers.tpl` named templates `databaseEnv`/`redisEnv`
+    render a shared `env:` block (`DB_USER`/`DB_PASSWORD`/`DB_NAME`/
+    `DB_HOST`/`DB_PORT` → `DATABASE_URL`, and the Redis equivalent) reused
+    identically by `api-deployment.yaml`, `worker-deployment.yaml`, and
+    `migration-job.yaml`. The actual composition happens via Kubernetes'
+    own `$(VAR_NAME)` env-var substitution — resolved by the kubelet at
+    pod start, not a shell or Helm — the same mechanism this chart
+    already used for Redis's `--requirepass "$(REDIS_PASSWORD)"` command
+    arg, just applied to an `env[].value` field instead of a `command`
+    arg (Kubernetes supports `$(VAR_NAME)` expansion in both). The
+    literal, unresolved `$(DB_PASSWORD)` text is all that ever appears
+    in rendered manifests or `kubectl get pod -o yaml` — the real
+    connection string only ever exists inside the container's resolved
+    environment.
+  - `charts/postgresql/templates/statefulset.yaml`'s `POSTGRES_USER`/
+    `POSTGRES_DB` now also come from the (now-shared) secret via
+    `secretKeyRef` rather than plain Helm values — `charts/postgresql/
+    values.yaml`'s `auth.username`/`auth.database` fields are gone
+    accordingly. Its liveness/readiness probes could no longer embed the
+    username as a literal templated arg (it's not a Helm value anymore),
+    so they were changed to `sh -c 'pg_isready -U "$POSTGRES_USER"'`,
+    reading it from the container's own resolved environment instead —
+    the same idiom the redis subchart's own probes already used for its
+    password. `charts/redis/templates/statefulset.yaml`'s secret key was
+    renamed `redis-password` → `password` for consistency with the new
+    scheme.
+  - **Caveat, called out in values.yaml/NOTES.txt**: this substitution
+    does no URL-encoding, so a username/password containing a
+    URL-reserved character (`@ : / ? # %`) will silently produce a
+    broken connection string. Worth a defensive validation to reject
+    those characters at the app config layer someday, but out of scope
+    for a Helm-chart-only change.
+  - Verified: the `$(VAR_NAME)` chain's actual string composition was
+    simulated in Node against representative values and produces the
+    exact expected `postgresql://...`/`redis://...` strings; every
+    affected template (api-deployment, worker-deployment, migration-job,
+    NOTES.txt, and both subcharts' StatefulSets, each with their own
+    helpers) was rendered through the hand-built harness across
+    `postgresql.enabled`/`redis.enabled` true and false and validated as
+    parseable YAML. **Not verified**: an actual `helm install` confirming
+    the kubelet really expands these end to end in a real pod.
+
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
 implement, and each bullet above for the specific caveats/known

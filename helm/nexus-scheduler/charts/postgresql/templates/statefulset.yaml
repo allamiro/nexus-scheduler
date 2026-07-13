@@ -25,14 +25,20 @@ spec:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           env:
             - name: POSTGRES_USER
-              value: {{ .Values.auth.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecretName | quote }}
+                  key: username
             - name: POSTGRES_DB
-              value: {{ .Values.auth.database | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecretName | quote }}
+                  key: database
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.auth.existingSecretName | quote }}
-                  key: postgres-password
+                  key: password
             # Nested one level below the mount point so a StatefulSet
             # PVC that already has a lost+found dir (some CSI drivers
             # pre-populate one) doesn't make initdb think the data
@@ -42,14 +48,19 @@ spec:
           ports:
             - containerPort: 5432
               name: postgresql
+          # Username now comes from the Secret rather than a Helm value,
+          # so it can't be rendered as a literal probe arg at template
+          # time — read it from the container's own env instead, same
+          # idiom the redis subchart's probes already use for its
+          # password.
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", {{ .Values.auth.username | quote }}]
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
             initialDelaySeconds: 15
             periodSeconds: 10
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", {{ .Values.auth.username | quote }}]
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:

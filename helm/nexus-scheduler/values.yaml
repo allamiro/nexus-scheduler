@@ -60,20 +60,21 @@ ingress:
 # vendored at charts/postgresql (not Bitnami's, see Chart.yaml), so
 # `helm install` never needs network access to stand this up. Set
 # `enabled: false` to bring your own external instance instead and fill
-# in `externalDatabase` below; either way, `secrets.databaseSecretName`
-# below is what the app itself actually reads its connection from.
+# in `externalDatabase` below (host/port only — credentials still come
+# from auth.existingSecretName below either way).
 postgresql:
   enabled: true
   auth:
-    username: nexus
-    database: nexus_scheduler
     # Pre-existing Secret (never created by this chart, must exist
-    # before install) holding *this bundled instance's own* password.
-    # Expected key: `postgres-password`. This is intentionally a
-    # different Secret from `secrets.databaseSecretName` below, which
-    # holds the app's full connection string — populate both with the
-    # same password; nothing here cross-references the other
-    # automatically.
+    # before install) holding this Postgres instance's credentials.
+    # Expected keys: `username`, `password`, `database`. Used both to
+    # boot the bundled instance (when enabled above) and by the app
+    # itself to build its own DATABASE_URL (see
+    # templates/_helpers.tpl's databaseEnv) — one secret to manage
+    # instead of two that had to be kept in sync by hand. CAVEAT: these
+    # values get concatenated into a connection string by Kubernetes'
+    # own $(VAR_NAME) substitution, which does no URL-encoding — avoid
+    # URL-reserved characters (@ : / ? # %) in username/password.
     existingSecretName: "nexus-scheduler-postgresql"
   persistence:
     enabled: true
@@ -86,10 +87,11 @@ postgresql:
 redis:
   enabled: true
   auth:
-    # Pre-existing Secret (never created by this chart) holding *this
-    # bundled instance's own* password. Expected key: `redis-password`.
-    # Same "two related but separate Secrets" note as postgresql.auth
-    # above applies here, against `secrets.redisSecretName` below.
+    # Pre-existing Secret (never created by this chart) holding this
+    # Redis instance's password. Expected key: `password`. Same
+    # "one secret, used both to boot the bundled instance and to build
+    # the app's own REDIS_URL" rationale and URL-encoding caveat as
+    # postgresql.auth above.
     existingSecretName: "nexus-scheduler-redis"
   persistence:
     enabled: true
@@ -98,8 +100,8 @@ redis:
 
 externalDatabase:
   # Used only when postgresql.enabled=false. Only host/port live here —
-  # they're not secret; the connection's actual credentials come from
-  # secrets.databaseSecretName below same as the bundled case.
+  # they're not secret; credentials still come from
+  # postgresql.auth.existingSecretName above either way.
   host: ""
   port: 5432
 
@@ -122,21 +124,10 @@ secrets:
   appSecretName: "nexus-scheduler-app"
   # Keys expected: OIDC_CLIENT_SECRET.
   oidcSecretName: "nexus-scheduler-oidc"
-  # Keys expected: DATABASE_URL — one fully-formed PostgreSQL connection
-  # string, e.g. postgresql://nexus:<password>@<release>-postgresql:5432/nexus_scheduler
-  # (bundled) or postgresql://<user>:<password>@<externalDatabase.host>:<port>/<db>
-  # (bring-your-own). Kept as a single pre-composed string rather than
-  # separate host/user/password fields Helm templates would reassemble —
-  # simpler and more robust than reconstructing it from pieces whose
-  # names could drift across chart versions, and it's the one thing both
-  # the bundled-subchart and bring-your-own paths need in common anyway.
-  databaseSecretName: "nexus-scheduler-database"
-  # Keys expected: REDIS_URL — one fully-formed Redis connection string,
-  # e.g. redis://:<password>@<release>-redis:6379 (bundled) or
-  # redis://:<password>@<externalRedis.host>:<port> (bring-your-own).
-  # Same "pre-composed string, not separate pieces" rationale as
-  # databaseSecretName above.
-  redisSecretName: "nexus-scheduler-redis-auth"
+  # DATABASE_URL/REDIS_URL are no longer separate pre-composed secrets —
+  # the app builds both itself at pod start from
+  # postgresql.auth.existingSecretName / redis.auth.existingSecretName
+  # above (see templates/_helpers.tpl's databaseEnv/redisEnv).
   # SMTP (§5) is NOT a K8s Secret — it's admin-configured at runtime via
   # the Admin UI and stored (password encrypted) in the app's own
   # database, the same as branding/classification-banner settings.
