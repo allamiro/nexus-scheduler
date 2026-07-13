@@ -362,9 +362,22 @@ though the payload's `status` field lets a receiver filter client-side.
     the flag existed but nothing checked it): it gates *ordinary* local
     accounts (login, forgot/reset-password, admin-provisioning new
     ones), never the built-in admin.
+  - **Admin-set password, in-band** (`POST /api/users/:id/set-password`):
+    the emailed reset link is the primary path, but it's a dead end if
+    SMTP isn't configured — a real possibility for the break-glass local
+    accounts this whole feature exists for. This sets a local account's
+    password directly and immediately (bcrypt-hashed, same cost factor
+    as login/self-service reset), clearing any pending reset token so a
+    stale emailed link can't be used afterward. Frontend: a "Set
+    Password" button per local account in the Admin Users panel, with a
+    "Generate random password" helper (Web Crypto, not `Math.random()`)
+    and a one-time on-screen display of the password just set (it's
+    never stored or shown again — the admin has to relay it to the user
+    out of band).
   - Frontend: a `/login` page (SSO button + local login form + forgot-
     password), a `/reset-password?token=...` page, and the Admin Users
-    panel gained "New Local User" and "Send password reset" actions.
+    panel gained "New Local User", "Send password reset", and "Set
+    Password" actions.
 
 - **Run history and manual "Run Now" trigger** (§2.1/§8): the `Run`
   model had been written to by the scheduler and read by the Worker's

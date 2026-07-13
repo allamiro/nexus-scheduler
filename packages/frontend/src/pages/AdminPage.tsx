@@ -681,6 +681,32 @@ function UserManagementPanel() {
     mutationFn: (id: string) => apiFetch(`/api/users/${id}/send-password-reset`, { method: "POST" }),
   });
 
+  const [setPasswordUser, setSetPasswordUser] = useState<AdminUser | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordSetFor, setPasswordSetFor] = useState<{ email: string; password: string } | null>(null);
+
+  const setPassword = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/users/${setPasswordUser!.id}/set-password`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword }),
+      }),
+    onSuccess: () => {
+      setPasswordSetFor({ email: setPasswordUser!.email, password: newPassword });
+      setSetPasswordUser(null);
+      setNewPassword("");
+    },
+  });
+
+  function generatePassword(): string {
+    // 20 chars from a-z/A-Z/0-9, drawn via Web Crypto rather than Math.random
+    // — this is handed directly to a real user account, not a UI toy.
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    const bytes = new Uint32Array(20);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+  }
+
   const deleteUser = useMutation({
     mutationFn: (id: string) => apiFetch(`/api/users/${id}`, { method: "DELETE" }),
     onSuccess: () => {
@@ -708,6 +734,12 @@ function UserManagementPanel() {
           Password reset email sent.
         </Alert>
       )}
+      {passwordSetFor && (
+        <Alert severity="success" sx={{ mb: 1 }} onClose={() => setPasswordSetFor(null)}>
+          Password set for {passwordSetFor.email}: <strong>{passwordSetFor.password}</strong> — give this to
+          the user now, it won't be shown again.
+        </Alert>
+      )}
       {deleteError && (
         <Alert severity="error" sx={{ mb: 1 }} onClose={() => setDeleteError(null)}>
           {deleteError}
@@ -730,8 +762,20 @@ function UserManagementPanel() {
                 secondary={u.email}
               />
               {u.authSource === "LOCAL" && (
-                <Button size="small" sx={{ mr: 2 }} disabled={sendReset.isPending} onClick={() => sendReset.mutate(u.id)}>
+                <Button size="small" sx={{ mr: 1 }} disabled={sendReset.isPending} onClick={() => sendReset.mutate(u.id)}>
                   Send password reset
+                </Button>
+              )}
+              {u.authSource === "LOCAL" && (
+                <Button
+                  size="small"
+                  sx={{ mr: 2 }}
+                  onClick={() => {
+                    setSetPasswordUser(u);
+                    setNewPassword(generatePassword());
+                  }}
+                >
+                  Set Password
                 </Button>
               )}
               <FormControl size="small" sx={{ minWidth: 110, mr: 2 }}>
@@ -804,6 +848,39 @@ function UserManagementPanel() {
           <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
           <Button variant="contained" disabled={!newEmail || createUser.isPending} onClick={() => createUser.mutate()}>
             Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!setPasswordUser} onClose={() => setSetPasswordUser(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Set Password for {setPasswordUser?.email}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Sets the password immediately — no email involved. Useful when SMTP isn't configured, or
+              when handing the user their password directly.
+            </Typography>
+            <TextField
+              label="New password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoFocus
+              fullWidth
+              helperText="At least 12 characters"
+            />
+            <Button size="small" onClick={() => setNewPassword(generatePassword())} sx={{ alignSelf: "flex-start" }}>
+              Generate random password
+            </Button>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSetPasswordUser(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={newPassword.length < 12 || setPassword.isPending}
+            onClick={() => setPassword.mutate()}
+          >
+            Set Password
           </Button>
         </DialogActions>
       </Dialog>

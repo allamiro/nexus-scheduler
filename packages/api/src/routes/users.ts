@@ -1,11 +1,14 @@
 import { Router } from "express";
-import { updateUserSchema, createLocalUserSchema } from "@nexus-scheduler/shared";
+import bcrypt from "bcryptjs";
+import { updateUserSchema, createLocalUserSchema, adminSetPasswordSchema } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent } from "../audit.js";
 import { issuePasswordResetEmail } from "../passwordReset.js";
 import type { AppConfig } from "../config.js";
 import type { Logger } from "../logger.js";
+
+const BCRYPT_ROUNDS = 12; // matches auth.ts's local-login/reset-password hashing cost
 
 // Doubles as the read-only picker used when adding Team members/Project
 // ACLs (any authenticated user, capped result set) and, for admins, the
@@ -195,6 +198,46 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
       actorId: admin.id,
       actorEmail: admin.email,
       action: "user.password_reset_sent",
+      targetType: "user",
+      targetId: user.id,
+      targetName: user.email,
+      result: "SUCCESS",
+    });
+
+    res.status(204).send();
+  });
+
+  // Sets a local account's password directly, in-band — the complement
+  // to send-password-reset's emailed link, for when SMTP isn't
+  // configured (a real possibility in an air-gapped deployment) or an
+  // admin just wants to hand the user a working password right now
+  // rather than waiting on email delivery. Clears any pending reset
+  // token so a stale emailed link can't still be used afterward.
+  router.post("/:id/set-password", requireAuth, requireAdmin, async (req, res) => {
+    const parsed = adminSetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const admin = req.session.user!;
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user || user.authSource !== "LOCAL") {
+      res.status(400).json({ error: "not a local account" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(parsed.data.newPassword, BCRYPT_ROUNDS);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, passwordResetTokenHash: null, passwordResetExpiresAt: null },
+    });
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: admin.id,
+      actorEmail: admin.email,
+      action: "user.password_set_by_admin",
       targetType: "user",
       targetId: user.id,
       targetName: user.email,

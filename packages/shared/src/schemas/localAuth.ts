@@ -32,3 +32,13 @@ export const createLocalUserSchema = z.object({
   role: z.enum(["ADMIN", "EDITOR", "VIEW"]).default("VIEW"),
 });
 export type CreateLocalUserInput = z.infer<typeof createLocalUserSchema>;
+
+// Admin-only: sets a local account's password directly, in-band, right
+// now — the complement to issuePasswordResetEmail's out-of-band emailed
+// link, for when SMTP isn't configured (a real possibility in an
+// air-gapped deployment) or an admin just wants to hand a user a
+// working password immediately rather than waiting on email delivery.
+export const adminSetPasswordSchema = z.object({
+  newPassword: z.string().min(PASSWORD_MIN_LENGTH),
+});
+export type AdminSetPasswordInput = z.infer<typeof adminSetPasswordSchema>;
