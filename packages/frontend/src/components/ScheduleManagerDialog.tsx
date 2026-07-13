@@ -48,6 +48,12 @@ interface PromptDetail {
 }
 
 const DEFAULT_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// Matches intervalConfigSchema's every_n_minutes floor (packages/shared/
+// src/schemas/schedule.ts) — REQUIREMENTS §2.1's concurrency/timeout
+// defaults assume a sane floor, not specifically 30; the old default of
+// 30 in this form was never an enforced minimum, just an unvalidated
+// starting value that looked like one.
+const MIN_INTERVAL_MINUTES = 5;
 
 type IntervalKind = "every_n_minutes" | "every_n_hours" | "daily" | "weekly";
 
@@ -342,6 +348,9 @@ export function ScheduleManagerDialog({
                       type="number"
                       value={minutes}
                       onChange={(e) => setMinutes(Number(e.target.value))}
+                      inputProps={{ min: MIN_INTERVAL_MINUTES }}
+                      helperText={`Minimum ${MIN_INTERVAL_MINUTES} minutes`}
+                      error={minutes < MIN_INTERVAL_MINUTES}
                       fullWidth
                     />
                   )}
@@ -458,7 +467,8 @@ export function ScheduleManagerDialog({
                     createSchedule.isPending ||
                     updateSchedule.isPending ||
                     (type === "ONE_TIME" && !runAt) ||
-                    (versionPinMode === "PINNED" && !pinnedPromptVersionId)
+                    (versionPinMode === "PINNED" && !pinnedPromptVersionId) ||
+                    (type === "RECURRING" && intervalKind === "every_n_minutes" && minutes < MIN_INTERVAL_MINUTES)
                   }
                   onClick={() => (editingScheduleId ? updateSchedule.mutate() : createSchedule.mutate())}
                 >
