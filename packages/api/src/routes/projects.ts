@@ -4,6 +4,7 @@ import {
   updateProjectSchema,
   grantProjectAclSchema,
   updateProjectAclSchema,
+  transferProjectOwnershipSchema,
 } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth, requireEditor } from "../middleware/requireAuth.js";
@@ -113,6 +114,54 @@ export function createProjectsRouter(): Router {
     });
 
     res.status(204).send();
+  });
+
+  // Deliberately a separate, OWNER-gated action from PATCH /:id (which
+  // only needs EDIT) — see transferProjectOwnershipSchema's comment for
+  // why ownerId can't just be another field on the general update.
+  // Doesn't touch ACLs: the previous owner keeps whatever access (if
+  // any) they already had via an ACL grant, same as REQUIREMENTS'
+  // existing sharing model — this is a handoff, not an automatic grant.
+  router.post("/:id/transfer-ownership", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {
+    const parsed = transferProjectOwnershipSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const user = req.session.user!;
+
+    const newOwner = await prisma.user.findUnique({ where: { id: parsed.data.newOwnerId } });
+    if (!newOwner) {
+      res.status(400).json({ error: "newOwnerId does not exist" });
+      return;
+    }
+
+    // req.session.user isn't necessarily the *current* owner — an admin
+    // can call this route too (requireProjectAccess grants admins
+    // OWNER-equivalent access regardless of actual ownership) — so the
+    // previous owner has to come from the Project row itself, not the
+    // acting user.
+    const previous = await prisma.project.findUniqueOrThrow({ where: { id: req.params.id } });
+
+    const project = await prisma.project.update({
+      where: { id: req.params.id },
+      data: { ownerId: parsed.data.newOwnerId },
+    });
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: user.id,
+      actorEmail: user.email,
+      action: "project.transfer_ownership",
+      targetType: "project",
+      targetId: project.id,
+      targetName: project.name,
+      result: "SUCCESS",
+      details: { previousOwnerId: previous.ownerId, newOwnerId: newOwner.id, newOwnerEmail: newOwner.email },
+    });
+
+    res.json(project);
   });
 
   router.get("/:id/acl", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {

@@ -756,6 +756,43 @@ if the security review calls for it.
     has full owner-equivalent control, and the last-owner guard blocks
     demotion until a second owner exists, then permits it.
 
+- **Fixed: token counts stuck at zero in usage reports.** Root cause —
+  `processor.ts` only ever read `response.usage.prompt_tokens`/
+  `completion_tokens` (OpenAI's convention), which "OpenAI-compatible"
+  never actually guaranteed LibreChat normalizes every underlying
+  provider to (REQUIREMENTS §14 had this flagged as unconfirmed from the
+  start). Anthropic's own native Messages API reports usage as
+  `input_tokens`/`output_tokens` instead — on a Claude-backed
+  deployment, if LibreChat passes that through unnormalized, the
+  OpenAI-shaped fields are simply absent and every run silently stored
+  `null` token counts, which every report then sums to a flat 0. New
+  `extractTokenUsage()` (`packages/worker/src/librechatClient.ts`) tries
+  both conventions in order instead of assuming one; a `usage` object
+  present but matching neither shape now logs a warning with the raw
+  object attached so a still-different shape is diagnosable from Worker
+  logs rather than silently swallowed again. Verified directly against
+  both real shapes, an unrecognized shape, and a missing `usage` field —
+  each resolves exactly as designed.
+
+- **Project ownership is now transferable.** Previously nothing could
+  ever change `Project.ownerId` after creation. New
+  `POST /api/projects/:id/transfer-ownership` (OWNER-gated, deliberately
+  *not* folded into the general EDIT-gated metadata PATCH — see
+  `transferProjectOwnershipSchema`'s comment: an EDIT collaborator being
+  able to reassign ownership would be a real privilege escalation) sets
+  a new owner; the previous owner keeps whatever access, if any, they
+  already had via an ACL grant — this is a handoff, not an automatic
+  grant. Frontend: a "Transfer Ownership" action next to Delete, visible
+  only to the current owner (or an admin). Verified against a real
+  running API (Postgres + Redis, real sessions): an EDIT-level
+  collaborator's transfer attempt correctly gets 403 while their normal
+  metadata edits keep working, the real owner's transfer succeeds and
+  they correctly lose OWNER-level access afterward (404, no ACL of their
+  own), an admin who was never the owner can transfer regardless, and
+  the audit log's recorded `previousOwnerId` is the Project's actual
+  prior owner rather than whichever admin happened to perform the
+  transfer — a bug caught and fixed during this same verification pass.
+
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
 implement, and each bullet above for the specific caveats/known

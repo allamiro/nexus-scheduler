@@ -214,6 +214,10 @@ function ProjectDetailPanel({ projectId, onDeleted }: { projectId: string; onDel
   const [editDescription, setEditDescription] = useState("");
   const [editLabelId, setEditLabelId] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferUserId, setTransferUserId] = useState<string | null>(null);
+  const [transferUserSearch, setTransferUserSearch] = useState("");
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   const detailQuery = useQuery({
     queryKey: ["projects", projectId],
@@ -258,6 +262,27 @@ function ProjectDetailPanel({ projectId, onDeleted }: { projectId: string; onDel
     onError: (err: unknown) => setDeleteError(err instanceof Error ? err.message : "delete failed"),
   });
 
+  const usersQuery = useQuery({
+    queryKey: ["users", transferUserSearch],
+    queryFn: () => apiFetch<UserSummary[]>(`/api/users?search=${encodeURIComponent(transferUserSearch)}`),
+    enabled: transferOpen && transferUserSearch.length > 1,
+  });
+
+  const transferOwnership = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/projects/${projectId}/transfer-ownership`, {
+        method: "POST",
+        body: JSON.stringify({ newOwnerId: transferUserId }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
+      setTransferOpen(false);
+      setTransferUserId(null);
+    },
+    onError: (err: unknown) => setTransferError(err instanceof Error ? err.message : "transfer failed"),
+  });
+
   if (!detailQuery.data) {
     return null;
   }
@@ -278,6 +303,11 @@ function ProjectDetailPanel({ projectId, onDeleted }: { projectId: string; onDel
             </Button>
           )}
           {project.effectiveAccess === "OWNER" && (
+            <Button size="small" onClick={() => setTransferOpen(true)}>
+              Transfer Ownership
+            </Button>
+          )}
+          {project.effectiveAccess === "OWNER" && (
             <Button size="small" color="error" disabled={deleteProject.isPending} onClick={() => deleteProject.mutate()}>
               Delete
             </Button>
@@ -290,7 +320,9 @@ function ProjectDetailPanel({ projectId, onDeleted }: { projectId: string; onDel
         </Alert>
       )}
       {project.description && <Typography color="text.secondary">{project.description}</Typography>}
-      <Typography variant="body2">Your access: {project.effectiveAccess}</Typography>
+      <Typography variant="body2">
+        Owner: {project.owner.displayName ?? project.owner.email} · Your access: {project.effectiveAccess}
+      </Typography>
 
       <Divider />
       <ProjectPromptsPanel projectId={project.id} canEdit={project.effectiveAccess !== "READ"} />
@@ -346,6 +378,56 @@ function ProjectDetailPanel({ projectId, onDeleted }: { projectId: string; onDel
             onClick={() => updateProject.mutate()}
           >
             Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={transferOpen}
+        onClose={() => {
+          setTransferOpen(false);
+          setTransferError(null);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Transfer Ownership</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              The new owner gets full control (sharing, deletion, and all EDIT/READ decisions). You keep
+              whatever access, if any, you already have via a sharing grant — this doesn't add one.
+            </Typography>
+            {transferError && (
+              <Alert severity="error" onClose={() => setTransferError(null)}>
+                {transferError}
+              </Alert>
+            )}
+            <Autocomplete
+              options={usersQuery.data ?? []}
+              getOptionLabel={(u) => `${u.displayName ?? u.email} (${u.email})`}
+              onInputChange={(_e, value) => setTransferUserSearch(value)}
+              onChange={(_e, value) => setTransferUserId(value?.id ?? null)}
+              renderInput={(params) => <TextField {...params} label="New owner" autoFocus />}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setTransferOpen(false);
+              setTransferError(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={!transferUserId || transferOwnership.isPending}
+            onClick={() => transferOwnership.mutate()}
+          >
+            Transfer
           </Button>
         </DialogActions>
       </Dialog>

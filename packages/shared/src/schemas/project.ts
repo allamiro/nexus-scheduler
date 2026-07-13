@@ -39,3 +39,14 @@ export const updateProjectAclSchema = z.object({
   accessLevel: z.enum(["READ", "EDIT"]),
 });
 export type UpdateProjectAclInput = z.infer<typeof updateProjectAclSchema>;
+
+// Deliberately a separate action from updateProjectSchema, gated OWNER
+// rather than EDIT — folding ownerId into the general metadata PATCH
+// (EDIT-gated) would let any EDIT collaborator transfer ownership away
+// from the actual owner, which is exactly the privilege escalation
+// requireProjectAccess("OWNER") exists to prevent elsewhere (§2.3: "a
+// Project owner can share a Project").
+export const transferProjectOwnershipSchema = z.object({
+  newOwnerId: z.string().uuid(),
+});
+export type TransferProjectOwnershipInput = z.infer<typeof transferProjectOwnershipSchema>;
