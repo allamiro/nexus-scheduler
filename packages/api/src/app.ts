@@ -34,6 +34,17 @@ export function createApp(config: AppConfig, logger: Logger): Express {
   const runsQueue = createRunsQueue(parseRedisConnectionOptions(config.REDIS_URL));
   const metrics = createMetrics();
 
+  // This app always sits behind exactly one reverse proxy (nginx —
+  // docker-compose's own instance locally, the target environment's
+  // pre-existing one in production; REQUIREMENTS §9.1) which terminates
+  // TLS, so Express itself only ever sees plain HTTP. Without this,
+  // req.secure is always false, and with cookie.secure: true below
+  // (production), express-session silently refuses to persist the
+  // session cookie at all — login appears to succeed but every
+  // subsequent request 401s, since the browser never received a cookie
+  // to send back. `1` = trust exactly one hop's X-Forwarded-* headers.
+  app.set("trust proxy", 1);
+
   // Security headers baseline — REQUIREMENTS.md §10 (OWASP hardening).
   app.use(helmet());
   app.use(cors({ origin: false })); // same-origin via nginx in production; adjust for local dev if needed
@@ -47,6 +58,10 @@ export function createApp(config: AppConfig, logger: Logger): Express {
       secret: config.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
+      // Explicit rather than relying solely on the "trust proxy" app
+      // setting above — makes express-session's own secure-cookie
+      // decision independent of any future change to that setting.
+      proxy: true,
       cookie: {
         httpOnly: true,
         secure: config.NODE_ENV === "production",
