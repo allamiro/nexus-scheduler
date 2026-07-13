@@ -38,6 +38,22 @@ export async function getEffectiveTeamIds(userId: string): Promise<string[]> {
   return [...effective];
 }
 
+export type TeamAccessLevel = "OWNER" | "MEMBER" | null;
+
+// Direct membership only — deliberately does NOT walk the parent/child
+// hierarchy the way getEffectiveTeamIds does for Project-ACL purposes.
+// Being an effective member of a Team's sub-team through inheritance
+// grants Project access via that sub-team's ACL grants, but it doesn't
+// make you a member of — let alone an owner of — the parent Team itself;
+// those are separate concerns.
+export async function getTeamAccess(userId: string, teamId: string): Promise<TeamAccessLevel> {
+  const membership = await prisma.teamMembership.findUnique({
+    where: { teamId_userId: { teamId, userId } },
+  });
+  if (!membership) return null;
+  return membership.isOwner ? "OWNER" : "MEMBER";
+}
+
 export type ProjectAccessLevel = "OWNER" | "EDIT" | "READ" | null;
 
 // Resolves the highest access level a user has on a Project via any

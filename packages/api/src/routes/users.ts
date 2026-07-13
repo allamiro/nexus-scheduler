@@ -128,14 +128,14 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
 
   // Hard delete — blocked (409) if the user owns/created anything a
   // foreign key still points at (Projects, Jobs, Schedules, Prompt
-  // versions), since Postgres has no cascade path for those and a raw
-  // constraint violation isn't a useful error message. Team memberships
-  // and personal API keys cascade cleanly and don't block this. An
-  // admin wanting to remove access from a user with history should use
-  // the "Active" toggle instead — REQUIREMENTS' audit trail (§7) still
-  // needs actorId/actorEmail to mean something even after the account
-  // is gone, which is exactly why AuditEvent doesn't have a real FK to
-  // User in the first place.
+  // versions, Teams), since Postgres has no cascade path for those and a
+  // raw constraint violation isn't a useful error message. Team
+  // memberships and personal API keys cascade cleanly and don't block
+  // this. An admin wanting to remove access from a user with history
+  // should use the "Active" toggle instead — REQUIREMENTS' audit trail
+  // (§7) still needs actorId/actorEmail to mean something even after the
+  // account is gone, which is exactly why AuditEvent doesn't have a real
+  // FK to User in the first place.
   router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
     const admin = req.session.user!;
 
@@ -150,17 +150,18 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
       return;
     }
 
-    const [ownedProjects, jobsCreated, schedulesCreated, promptVersions] = await Promise.all([
+    const [ownedProjects, jobsCreated, schedulesCreated, promptVersions, teamsCreated] = await Promise.all([
       prisma.project.count({ where: { ownerId: user.id } }),
       prisma.job.count({ where: { createdById: user.id } }),
       prisma.schedule.count({ where: { createdById: user.id } }),
       prisma.promptVersion.count({ where: { createdById: user.id } }),
+      prisma.team.count({ where: { createdById: user.id } }),
     ]);
-    const blockers = ownedProjects + jobsCreated + schedulesCreated + promptVersions;
+    const blockers = ownedProjects + jobsCreated + schedulesCreated + promptVersions + teamsCreated;
     if (blockers > 0) {
       res.status(409).json({
         error:
-          "cannot delete — this user owns or created Projects, Jobs, Schedules, or Prompt versions; deactivate the account instead",
+          "cannot delete — this user owns or created Projects, Jobs, Schedules, Prompt versions, or Teams; deactivate the account instead",
       });
       return;
     }

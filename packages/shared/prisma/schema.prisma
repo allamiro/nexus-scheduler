@@ -54,6 +54,7 @@ model User {
   jobsCreated        Job[]
   schedulesCreated   Schedule[]
   promptFavorites    PromptFavorite[]
+  teamsCreated       Team[]
 
   @@map("users")
 }
@@ -65,6 +66,12 @@ model Team {
   parentTeam   Team?    @relation("TeamHierarchy", fields: [parentTeamId], references: [id])
   subTeams     Team[]   @relation("TeamHierarchy")
   createdAt    DateTime @default(now())
+  // Nullable because teams created before ownership existed have no
+  // recorded creator — those stay admin-managed-only until an admin
+  // designates an owner, rather than guessing one. Always set for teams
+  // created from here forward.
+  createdById  String?
+  createdBy    User?    @relation(fields: [createdById], references: [id])
 
   memberships TeamMembership[]
   apiKeys     ApiKey[]
@@ -75,8 +82,12 @@ model Team {
 model TeamMembership {
   teamId   String
   userId   String
-  team     Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team     Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Owners can edit the team (rename/reparent), manage membership, and
+  // delete it; plain members can only see it. A team can have more than
+  // one owner. Admins bypass this check entirely and can manage any team.
+  isOwner  Boolean @default(false)
 
   @@id([teamId, userId])
   @@map("team_memberships")

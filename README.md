@@ -715,6 +715,47 @@ if the security review calls for it.
     script's atomicity actually holds under real concurrent load
     (exactly 5 succeeded, not more).
 
+- **Team ownership** (§2.3/§4): originally any editor/admin could
+  rename, delete, or manage the membership of *any* Team, and every
+  authenticated user could see every Team that existed — Teams had no
+  concept of who was responsible for one. Now:
+  - `TeamMembership` gained an `isOwner` boolean (a Team can have more
+    than one owner); `Team` gained `createdById` so the creator is
+    recorded and automatically becomes the first owner at creation time
+    (in the same transaction as the Team row itself, so a Team is never
+    created ownerless). Legacy Teams from before this change have no
+    recorded creator and stay admin-managed-only until an admin
+    designates an owner, rather than guessing one from incomplete data.
+  - New `getTeamAccess()`/`requireTeamAccess` (`packages/api/src/
+    access.ts` / `middleware/requireTeamAccess.ts`, mirroring the
+    existing Project-access pattern) gate rename/delete/membership
+    management to a Team's own owners — plain members can view but not
+    edit. Admins bypass this entirely and can manage any Team
+    (REQUIREMENTS §4). Demoting or removing the last remaining owner is
+    blocked (400) rather than allowed to silently orphan a Team.
+  - `GET /api/teams` — scoped: the Teams management page now calls
+    `?mine=true` and sees only Teams the current user directly belongs
+    to (admins still see every Team either way); without that param the
+    route is **unchanged** and still returns every Team in the org,
+    since the Project-sharing "share with a Team" picker and the API
+    Key "Team-owned key" picker both depend on that — sharing with, or
+    provisioning a key for, a Team you don't personally belong to is
+    existing, working behavior neither of those flows should lose.
+  - Frontend: an "Owner"/"Member" indicator per Team and per member row,
+    "Make Owner"/"Remove Owner" toggle buttons, and Rename/Delete/
+    member-management controls that only render at all for an owner or
+    admin.
+  - Verified against a real local Postgres + Redis (not just
+    typechecked): a full HTTP round-trip through the actual running API
+    — session-authenticated as four distinct local accounts (a Team
+    owner, a plain member, a complete outsider, and a non-member admin)
+    — confirmed a Team's creator is auto-owned, a member can view but
+    gets 404 attempting to rename/delete/add-members, an outsider gets
+    404 from the detail route and is absent from `?mine=true` but still
+    present in the unrestricted list, an admin who isn't a member at all
+    has full owner-equivalent control, and the last-owner guard blocks
+    demotion until a second owner exists, then permits it.
+
 Stubbed / not yet built: nothing outstanding from this list as of this
 round — see REQUIREMENTS.md for the full feature set the app should
 implement, and each bullet above for the specific caveats/known

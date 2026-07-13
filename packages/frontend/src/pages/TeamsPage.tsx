@@ -19,16 +19,21 @@ import {
   Typography,
 } from "@mui/material";
 import { apiFetch } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 interface Team {
   id: string;
   name: string;
   parentTeamId: string | null;
   _count: { memberships: number; subTeams: number };
+  // Whether the current viewer can rename/reparent/delete this Team and
+  // manage its membership — an owner of this specific Team, or an admin
+  // (who has full control over every Team regardless of membership).
+  viewerIsOwner: boolean;
 }
 
 interface TeamDetail extends Team {
-  memberships: Array<{ user: { id: string; email: string; displayName: string | null } }>;
+  memberships: Array<{ isOwner: boolean; user: { id: string; email: string; displayName: string | null } }>;
   subTeams: Array<{ id: string; name: string }>;
   parentTeam: { id: string; name: string } | null;
 }
@@ -40,13 +45,22 @@ interface UserSummary {
 }
 
 export function TeamsPage() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamParentId, setNewTeamParentId] = useState<string | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
-  const teamsQuery = useQuery({ queryKey: ["teams"], queryFn: () => apiFetch<Team[]>("/api/teams") });
+  // Distinct query key from the plain ["teams"] used elsewhere (Project
+  // sharing's Team picker, API Key creation's Team-owner picker) since
+  // this fetches a different, narrower set — the same cache key with
+  // different underlying data would let one page's cached result bleed
+  // into the other.
+  const teamsQuery = useQuery({
+    queryKey: ["teams", "mine"],
+    queryFn: () => apiFetch<Team[]>("/api/teams?mine=true"),
+  });
 
   const detailQuery = useQuery({
     queryKey: ["teams", selectedTeamId],
@@ -92,7 +106,9 @@ export function TeamsPage() {
             </ListItem>
           ))}
           {teamsQuery.data?.length === 0 && (
-            <Typography color="text.secondary">No Teams yet.</Typography>
+            <Typography color="text.secondary">
+              {user?.role === "ADMIN" ? "No Teams exist yet." : "You don't belong to any Teams yet."}
+            </Typography>
           )}
         </List>
       </Box>
@@ -147,6 +163,7 @@ function TeamDetailPanel({ team, onDeleted }: { team: TeamDetail; onDeleted: () 
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState(team.name);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [membershipError, setMembershipError] = useState<string | null>(null);
   useEffect(() => setEditName(team.name), [team.id, team.name]);
 
   const usersQuery = useQuery({
@@ -162,12 +179,24 @@ function TeamDetailPanel({ team, onDeleted }: { team: TeamDetail; onDeleted: () 
         body: JSON.stringify({ userId }),
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["teams", team.id] }),
+    onError: (err: unknown) => setMembershipError(err instanceof Error ? err.message : "action failed"),
   });
 
   const removeMember = useMutation({
     mutationFn: (userId: string) =>
       apiFetch(`/api/teams/${team.id}/members/${userId}`, { method: "DELETE" }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["teams", team.id] }),
+    onError: (err: unknown) => setMembershipError(err instanceof Error ? err.message : "action failed"),
+  });
+
+  const setOwner = useMutation({
+    mutationFn: ({ userId, isOwner }: { userId: string; isOwner: boolean }) =>
+      apiFetch(`/api/teams/${team.id}/members/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isOwner }),
+      }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["teams", team.id] }),
+    onError: (err: unknown) => setMembershipError(err instanceof Error ? err.message : "action failed"),
   });
 
   const updateTeam = useMutation({
@@ -192,19 +221,29 @@ function TeamDetailPanel({ team, onDeleted }: { team: TeamDetail; onDeleted: () 
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-        <Typography variant="h5">{team.name}</Typography>
-        <Stack direction="row" spacing={1}>
-          <Button size="small" onClick={() => setEditOpen(true)}>
-            Rename
-          </Button>
-          <Button size="small" color="error" disabled={deleteTeam.isPending} onClick={() => deleteTeam.mutate()}>
-            Delete
-          </Button>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="h5">{team.name}</Typography>
+          {!team.viewerIsOwner && <Chip size="small" label="Member" variant="outlined" />}
         </Stack>
+        {team.viewerIsOwner && (
+          <Stack direction="row" spacing={1}>
+            <Button size="small" onClick={() => setEditOpen(true)}>
+              Rename
+            </Button>
+            <Button size="small" color="error" disabled={deleteTeam.isPending} onClick={() => deleteTeam.mutate()}>
+              Delete
+            </Button>
+          </Stack>
+        )}
       </Stack>
       {deleteError && (
         <Alert severity="error" onClose={() => setDeleteError(null)}>
           {deleteError}
+        </Alert>
+      )}
+      {membershipError && (
+        <Alert severity="error" onClose={() => setMembershipError(null)}>
+          {membershipError}
         </Alert>
       )}
       {team.parentTeam && (
@@ -225,12 +264,36 @@ function TeamDetailPanel({ team, onDeleted }: { team: TeamDetail; onDeleted: () 
           <ListItem
             key={m.user.id}
             secondaryAction={
-              <Button size="small" color="error" onClick={() => removeMember.mutate(m.user.id)}>
-                Remove
-              </Button>
+              team.viewerIsOwner && (
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    disabled={setOwner.isPending}
+                    onClick={() => setOwner.mutate({ userId: m.user.id, isOwner: !m.isOwner })}
+                  >
+                    {m.isOwner ? "Remove Owner" : "Make Owner"}
+                  </Button>
+                  <Button
+                    size="small"
+                    color="error"
+                    disabled={removeMember.isPending}
+                    onClick={() => removeMember.mutate(m.user.id)}
+                  >
+                    Remove
+                  </Button>
+                </Stack>
+              )
             }
           >
-            <ListItemText primary={m.user.displayName ?? m.user.email} secondary={m.user.email} />
+            <ListItemText
+              primary={
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <span>{m.user.displayName ?? m.user.email}</span>
+                  {m.isOwner && <Chip size="small" label="Owner" color="primary" />}
+                </Stack>
+              }
+              secondary={m.user.email}
+            />
           </ListItem>
         ))}
         {team.memberships.length === 0 && (
@@ -238,13 +301,15 @@ function TeamDetailPanel({ team, onDeleted }: { team: TeamDetail; onDeleted: () 
         )}
       </List>
 
-      <Autocomplete
-        options={usersQuery.data ?? []}
-        getOptionLabel={(u) => `${u.displayName ?? u.email} (${u.email})`}
-        onInputChange={(_e, value) => setUserSearch(value)}
-        onChange={(_e, value) => value && addMember.mutate(value.id)}
-        renderInput={(params) => <TextField {...params} label="Add member by email" />}
-      />
+      {team.viewerIsOwner && (
+        <Autocomplete
+          options={usersQuery.data ?? []}
+          getOptionLabel={(u) => `${u.displayName ?? u.email} (${u.email})`}
+          onInputChange={(_e, value) => setUserSearch(value)}
+          onChange={(_e, value) => value && addMember.mutate(value.id)}
+          renderInput={(params) => <TextField {...params} label="Add member by email" />}
+        />
+      )}
 
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Rename Team</DialogTitle>
