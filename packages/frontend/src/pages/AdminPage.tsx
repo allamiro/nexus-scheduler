@@ -380,8 +380,22 @@ function SystemSettingsPanel() {
     mutationFn: () => apiFetch("/api/settings/smtp/test", { method: "POST" }),
   });
 
+  // Sends the current (possibly unsaved) form values rather than no body
+  // at all — otherwise "Test" would silently test whatever was last
+  // saved instead of what's actually in the form, including a just-
+  // uploaded CA cert the admin hasn't hit Save on yet.
   const testSyslog = useMutation({
-    mutationFn: () => apiFetch("/api/settings/syslog/test", { method: "POST" }),
+    mutationFn: () =>
+      apiFetch("/api/settings/syslog/test", {
+        method: "POST",
+        body: JSON.stringify({
+          host: syslogHost || undefined,
+          port: syslogPort ? Number(syslogPort) : undefined,
+          transport: syslogTransport,
+          tls: syslogTls,
+          caCert: syslogTls ? syslogTlsCaCert || null : null,
+        }),
+      }),
   });
 
   return (

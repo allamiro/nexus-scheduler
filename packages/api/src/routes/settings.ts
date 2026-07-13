@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import { z } from "zod";
 import { updateAppSettingsSchema, encryptSecret, buildRfc5424Message, sendSyslogMessage } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
@@ -8,6 +9,18 @@ import { sendEmail, SmtpNotConfiguredError } from "../email.js";
 import type { AppConfig } from "../config.js";
 
 const SETTINGS_ID = 1; // singleton row, enforced here rather than a real sequence
+
+// POST /syslog/test's optional body — the same syslog* fields as
+// updateAppSettingsSchema, unprefixed, all optional so an admin can test
+// their current (unsaved) form edits instead of only ever testing
+// whatever was last saved.
+const testSyslogOverridesSchema = z.object({
+  host: z.string().min(1).optional(),
+  port: z.number().int().positive().max(65535).optional(),
+  transport: z.enum(["TCP", "UDP"]).optional(),
+  tls: z.boolean().optional(),
+  caCert: z.string().nullable().optional(),
+});
 
 const PUBLIC_FIELDS = {
   productName: true,
@@ -111,9 +124,28 @@ export function createSettingsRouter(config: AppConfig): Router {
   });
 
   router.post("/syslog/test", requireAuth, requireAdmin, async (req, res) => {
+    // Accepts the same fields as updateAppSettingsSchema's syslog* ones,
+    // all optional — lets the admin test their in-progress form edits
+    // (host/port/transport/tls/caCert) before hitting Save, rather than
+    // only ever testing whatever was last saved. Any field omitted here
+    // falls back to the saved value below.
+    const parsed = testSyslogOverridesSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const overrides = parsed.data;
+
     const settings = await getOrCreateSettings();
-    if (!settings.syslogEnabled || !settings.syslogHost || !settings.syslogPort) {
-      res.status(400).json({ error: "syslog is not configured — set host, port, and enable it first" });
+    const effective = {
+      host: overrides.host ?? settings.syslogHost,
+      port: overrides.port ?? settings.syslogPort,
+      transport: overrides.transport ?? settings.syslogTransport,
+      tls: overrides.tls ?? settings.syslogTls,
+      caCert: overrides.caCert !== undefined ? overrides.caCert : settings.syslogTlsCaCert,
+    };
+    if (!effective.host || !effective.port) {
+      res.status(400).json({ error: "syslog is not configured — set host and port first" });
       return;
     }
 
@@ -135,11 +167,11 @@ export function createSettingsRouter(config: AppConfig): Router {
       });
       await sendSyslogMessage(
         {
-          host: settings.syslogHost,
-          port: settings.syslogPort,
-          transport: settings.syslogTransport,
-          tls: settings.syslogTls,
-          caCert: settings.syslogTlsCaCert,
+          host: effective.host,
+          port: effective.port,
+          transport: effective.transport,
+          tls: effective.tls,
+          caCert: effective.caCert,
         },
         message,
       );
