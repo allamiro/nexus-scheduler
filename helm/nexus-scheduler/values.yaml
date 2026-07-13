@@ -133,9 +133,45 @@ secrets:
   # database, the same as branding/classification-banner settings.
 
 oidc:
+  # Base URL of the OIDC issuer (e.g. a Keycloak realm,
+  # https://keycloak.example.mil/realms/nexus-scheduler) used for
+  # discovery. REQUIREMENTS §4: CAC/PIV smart-card auth happens entirely
+  # upstream inside the IdP — Nexus Scheduler never sees a certificate,
+  # only the resulting OIDC token. Left empty, SSO login is unavailable
+  # and only local/break-glass admin login works.
   issuerUrl: ""
+  # Also doubles as the Keycloak *client* whose role-mapping claim gets
+  # read at every login — see the roles note below.
   clientId: "nexus-scheduler"
+  # Must exactly match the redirect URI registered on this client in the
+  # IdP, and is always this app's own base URL + `/auth/callback`
+  # (packages/api/src/app.ts mounts the OIDC callback route at
+  # `/auth/callback`). E.g. for a deployment reachable at
+  # https://scheduler.mpnexus.army.ms.us:
+  #   https://scheduler.mpnexus.army.ms.us/auth/callback
   redirectUri: ""
+  # --- Expected claims on the OIDC ID token this app reads ---
+  # (packages/api/src/routes/auth.ts, packages/api/src/auth/oidc.ts)
+  #
+  # User fields — standard OIDC claims, requested via the `openid email
+  # profile` scopes. All except `email` are optional: a missing one just
+  # leaves that field null rather than failing login.
+  #   email        (required) -> User.email — login fails with a 400 if
+  #                the ID token has no email claim at all.
+  #   given_name   (optional) -> User.givenName
+  #   family_name  (optional) -> User.familyName
+  #   name         (optional) -> User.displayName
+  #
+  # Role mapping — Keycloak's *client* roles claim (a Client Role on the
+  # `clientId` client above, not a Realm Role and not a generic "roles"
+  # claim):
+  #   resource_access.<clientId>.roles: ["<role>", ...]
+  # Matched case-insensitively against this app's three roles — ADMIN,
+  # EDITOR, VIEW (packages/shared/src/roles.ts) — and re-evaluated on
+  # every login, so Keycloak stays the source of truth going forward,
+  # not just at first account creation. No recognized role present ->
+  # falls back to VIEW (least privileged), never a more powerful role by
+  # default.
 
 librechat:
   baseUrl: ""
