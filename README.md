@@ -206,10 +206,14 @@ helm install nexus-scheduler helm/nexus-scheduler -f my-values.yaml
   install needs no external dependencies or network access to stand
   them up. Set `postgresql.enabled: false` / `redis.enabled: false` to
   bring your own instead.
-- Connection strings are built automatically from discrete secret
-  fields (username/password/database) rather than requiring a
-  hand-composed connection string — see `values.yaml`'s comments for
-  the exact secret shape.
+- Connection strings are built automatically (with proper URL-encoding)
+  from discrete secret fields (username/password/database) rather than
+  requiring a hand-composed connection string — see `values.yaml`'s
+  comments for the exact secret shape.
+- A database migration Job (`prisma db push`) runs alongside the rest of
+  the release and retries for a few minutes until Postgres is reachable
+  — expect a few CrashLoopBackOff restarts on api/worker until it
+  completes on a fresh install, which is normal.
 - Custom CA trust for the LibreChat connection is supported via
   `librechat.tls.caBundle`, for environments where LibreChat's
   certificate chains to an internal CA.

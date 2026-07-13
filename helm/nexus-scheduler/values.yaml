@@ -69,12 +69,11 @@ postgresql:
     # before install) holding this Postgres instance's credentials.
     # Expected keys: `username`, `password`, `database`. Used both to
     # boot the bundled instance (when enabled above) and by the app
-    # itself to build its own DATABASE_URL (see
-    # templates/_helpers.tpl's databaseEnv) — one secret to manage
-    # instead of two that had to be kept in sync by hand. CAVEAT: these
-    # values get concatenated into a connection string by Kubernetes'
-    # own $(VAR_NAME) substitution, which does no URL-encoding — avoid
-    # URL-reserved characters (@ : / ? # %) in username/password.
+    # itself to build its own DATABASE_URL (see templates/_helpers.tpl's
+    # databaseEnv/exportDatabaseUrlSnippet) — one secret to manage
+    # instead of two that had to be kept in sync by hand. The URL is
+    # assembled at container start with proper URL-encoding, so any
+    # character is safe to use in username/password.
     existingSecretName: "nexus-scheduler-postgresql"
   persistence:
     enabled: true
@@ -90,7 +89,7 @@ redis:
     # Pre-existing Secret (never created by this chart) holding this
     # Redis instance's password. Expected key: `password`. Same
     # "one secret, used both to boot the bundled instance and to build
-    # the app's own REDIS_URL" rationale and URL-encoding caveat as
+    # the app's own REDIS_URL, safely URL-encoded" rationale as
     # postgresql.auth above.
     existingSecretName: "nexus-scheduler-redis"
   persistence:
@@ -127,7 +126,8 @@ secrets:
   # DATABASE_URL/REDIS_URL are no longer separate pre-composed secrets —
   # the app builds both itself at pod start from
   # postgresql.auth.existingSecretName / redis.auth.existingSecretName
-  # above (see templates/_helpers.tpl's databaseEnv/redisEnv).
+  # above (see templates/_helpers.tpl's databaseEnv/redisEnv and
+  # exportDatabaseUrlSnippet/exportRedisUrlSnippet).
   # SMTP (§5) is NOT a K8s Secret — it's admin-configured at runtime via
   # the Admin UI and stored (password encrypted) in the app's own
   # database, the same as branding/classification-banner settings.

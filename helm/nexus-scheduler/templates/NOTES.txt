@@ -15,16 +15,24 @@ exist in this namespace (none are created by this chart — REQUIREMENTS
       keys: OIDC_CLIENT_SECRET
   - {{ .Values.postgresql.auth.existingSecretName }}
       keys: username, password, database
-      (DATABASE_URL is built automatically at pod start from these —
-      see values.yaml's postgresql.auth comment. Used both to boot the
-      bundled PostgreSQL instance, when enabled, and by the app itself;
-      only this one secret to manage, not two kept in sync by hand.
-      Avoid URL-reserved characters — @ : / ? # % — in these values.)
+      (DATABASE_URL is built automatically and URL-encoded at pod start
+      from these — see values.yaml's postgresql.auth comment. Used both
+      to boot the bundled PostgreSQL instance, when enabled, and by the
+      app itself; only this one secret to manage, not two kept in sync
+      by hand.)
   - {{ .Values.redis.auth.existingSecretName }}
       keys: password
       (REDIS_URL is built automatically the same way — see values.yaml's
-      redis.auth comment. Same one-secret, no-URL-reserved-characters
-      notes as above apply.)
+      redis.auth comment.)
+
+The database migration Job ({{ include "nexus-scheduler.fullname" . }}-migrate-{{ .Release.Revision }})
+runs `prisma db push` and retries for up to 5 minutes if Postgres isn't
+reachable yet — normal on a fresh install, since it starts at the same
+time as the bundled PostgreSQL/Redis instances rather than waiting on
+them. api/worker pods may show a few CrashLoopBackOff restarts until the
+migration Job succeeds; that's expected self-healing, not a separate
+problem. Check `kubectl logs job/{{ include "nexus-scheduler.fullname" . }}-migrate-{{ .Release.Revision }}`
+if api/worker are still failing well after that Job completes.
 
 SMTP (§5) is not a K8s Secret — configure it from the Admin UI after
 first login; it's stored (password encrypted) in the app's own database.

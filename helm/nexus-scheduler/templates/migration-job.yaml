@@ -1,24 +1,33 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "nexus-scheduler.fullname" . }}-migrate
+  # NOT a Helm hook, deliberately. A pre-install/pre-upgrade hook Job
+  # runs — and Helm waits for it to complete — *before* any other
+  # manifest in the release is even created, including this same
+  # chart's own bundled postgresql/redis subcharts (they're ordinary,
+  # non-hook templates). With the hook Postgres/Redis simply don't exist
+  # yet when this Job tries to connect, and (being a bundled default)
+  # they never will until this hook finishes — a deadlock. Being a plain
+  # resource means this Job is created in the same wave as
+  # postgresql/redis/api/worker; the retry loop below (rather than Helm
+  # hook ordering) is what makes it tolerate Postgres or Redis not being
+  # ready yet. api/worker pods created around the same time will crash-
+  # loop (bootstrapAdmin.ts's prisma.user.upsert fails against an
+  # un-migrated schema) until this Job succeeds — normal, self-healing
+  # CrashLoopBackOff, not a sign of a separate problem.
+  # Suffixed with the release revision rather than a fixed name: a Job's
+  # pod template is immutable after creation, so a fixed name would make
+  # `helm upgrade` fail outright the moment anything in this template
+  # changed (a new image tag, etc). ttlSecondsAfterFinished below cleans
+  # up old ones automatically instead of leaving them to accumulate.
+  name: {{ include "nexus-scheduler.fullname" . }}-migrate-{{ .Release.Revision }}
   labels:
     {{- include "nexus-scheduler.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
-  annotations:
-    # Runs before api/worker are (re)created on every install/upgrade,
-    # mirroring docker-compose's `migrate` service +
-    # `depends_on.migrate.condition: service_completed_successfully` —
-    # Helm waits for hook Jobs to complete before applying the rest of
-    # the release. hook-succeeded deletion keeps a fresh Job name
-    # available on the next upgrade instead of erroring on the old one
-    # still existing.
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 3
-  activeDeadlineSeconds: 300
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 3600
   template:
     metadata:
       labels:
@@ -48,12 +57,28 @@ spec:
           image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}-api:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           workingDir: /app
-          command:
-            - node_modules/.bin/prisma
-            - db
-            - push
-            - --schema=packages/shared/prisma/schema.prisma
-            - --skip-generate
+          # Not a Helm hook (see the metadata comment above), so nothing
+          # guarantees Postgres is actually reachable yet by the time
+          # this pod starts — retries for up to 5 minutes (60 attempts,
+          # 5s apart) rather than failing on the first attempt, which is
+          # normal and expected on a fresh install where the bundled
+          # Postgres subchart is still initializing (PVC provisioning,
+          # first boot) at the same time.
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              {{ include "nexus-scheduler.exportDatabaseUrlSnippet" . }}
+              attempt=0
+              until node_modules/.bin/prisma db push --schema=packages/shared/prisma/schema.prisma --skip-generate; do
+                attempt=$((attempt+1))
+                if [ "$attempt" -ge 60 ]; then
+                  echo "prisma db push did not succeed after $attempt attempts — giving up" >&2
+                  exit 1
+                fi
+                echo "prisma db push failed (attempt $attempt/60) — database may not be ready yet, retrying in 5s..." >&2
+                sleep 5
+              done
           securityContext:
             allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
             capabilities:
@@ -63,9 +88,8 @@ spec:
             # baked into the image from the build stage, but Prisma still
             # writes a small per-invocation lock/introspection file
             # alongside it, which fails outright on a read-only root fs.
-            # This Job is short-lived and only ever runs as a Helm hook,
-            # not an always-on service, so the tradeoff is acceptable
-            # here specifically.
+            # This Job is short-lived and one-shot, not an always-on
+            # service, so the tradeoff is acceptable here specifically.
             readOnlyRootFilesystem: false
           env:
             {{- include "nexus-scheduler.databaseEnv" . | nindent 12 }}

@@ -32,6 +32,22 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - containerPort: {{ .Values.api.port }}
+          # DATABASE_URL/REDIS_URL aren't set directly as env vars (see
+          # nexus-scheduler.databaseEnv/redisEnv below) — they're built
+          # here from the discrete pieces via a properly URL-encoding
+          # script, then the original image CMD is exec'd. See
+          # _helpers.tpl's exportDatabaseUrlSnippet/exportRedisUrlSnippet
+          # for why this can't just be Kubernetes' own $(VAR) expansion.
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              {{ include "nexus-scheduler.exportDatabaseUrlSnippet" . }}
+              {{ include "nexus-scheduler.exportRedisUrlSnippet" . }}
+              exec "$@"
+            - sh
+            - node
+            - packages/api/dist/index.js
           env:
             - name: NODE_ENV
               value: "production"

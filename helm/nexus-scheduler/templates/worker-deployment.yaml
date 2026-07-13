@@ -32,6 +32,19 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - containerPort: {{ .Values.worker.healthPort }}
+          # See api-deployment.yaml's identical command/args block for
+          # why DATABASE_URL/REDIS_URL are built here rather than set
+          # directly as env vars.
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              {{ include "nexus-scheduler.exportDatabaseUrlSnippet" . }}
+              {{ include "nexus-scheduler.exportRedisUrlSnippet" . }}
+              exec "$@"
+            - sh
+            - node
+            - packages/worker/dist/index.js
           env:
             - name: NODE_ENV
               value: "production"

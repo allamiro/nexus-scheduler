@@ -58,19 +58,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-Builds DATABASE_URL from discrete pieces at pod-start time via
-Kubernetes' own $(VAR_NAME) env-var substitution (resolved by the
-kubelet, not a shell — the literal, unresolved text is all that ever
-appears in `kubectl get pod -o yaml` or `helm template` output) rather
-than requiring an operator to hand-compose and store a full connection
-string. postgresql.auth.existingSecretName is the single source of truth
-for these credentials, used both by the bundled subchart (when enabled)
-to boot Postgres itself and by this app to build its own connection
-string — one secret instead of two that had to be kept in sync manually.
-
-CAVEAT: kubelet substitution does no URL-encoding — a username/password
-containing URL-reserved characters (@ : / ? # %) will produce a broken
-DATABASE_URL. Keep generated/chosen credentials free of those.
+Discrete Postgres connection pieces, sourced from
+postgresql.auth.existingSecretName — the single source of truth for
+these credentials, used both by the bundled subchart (when enabled) to
+boot Postgres itself and by this app to build its own DATABASE_URL. Only
+the pieces, not the assembled URL: building the URL via Kubernetes' own
+$(VAR_NAME) substitution can't URL-encode, so a username/password
+containing a URL-reserved character (@ : / ? # %) would silently produce
+a broken connection string. Assembly instead happens in
+nexus-scheduler.exportDatabaseUrlSnippet below, via Node's
+encodeURIComponent, which handles that correctly.
 */}}
 {{- define "nexus-scheduler.databaseEnv" -}}
 - name: DB_USER
@@ -92,11 +89,9 @@ DATABASE_URL. Keep generated/chosen credentials free of those.
   value: {{ include "nexus-scheduler.databaseHost" . | quote }}
 - name: DB_PORT
   value: {{ include "nexus-scheduler.databasePort" . | quote }}
-- name: DATABASE_URL
-  value: "postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
 {{- end -}}
 
-{{/* Same rationale and caveats as nexus-scheduler.databaseEnv above. */}}
+{{/* Same rationale as nexus-scheduler.databaseEnv above. */}}
 {{- define "nexus-scheduler.redisEnv" -}}
 - name: REDIS_PASSWORD
   valueFrom:
@@ -107,6 +102,21 @@ DATABASE_URL. Keep generated/chosen credentials free of those.
   value: {{ include "nexus-scheduler.redisHost" . | quote }}
 - name: REDIS_PORT
   value: {{ include "nexus-scheduler.redisPort" . | quote }}
-- name: REDIS_URL
-  value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)"
+{{- end -}}
+
+{{/*
+A one-line `sh`-compatible statement that reads DB_USER/DB_PASSWORD/
+DB_HOST/DB_PORT/DB_NAME (nexus-scheduler.databaseEnv above) and exports
+a properly URL-encoded DATABASE_URL — unlike raw $(VAR_NAME)
+substitution, encodeURIComponent correctly handles a username/password
+containing URL-reserved characters. Meant to be the first line of a
+container's `sh -c` command, before `exec`-ing the real entrypoint.
+*/}}
+{{- define "nexus-scheduler.exportDatabaseUrlSnippet" -}}
+eval "$(node -e 'const e=encodeURIComponent;console.log("export DATABASE_URL="+JSON.stringify(`postgresql://${e(process.env.DB_USER)}:${e(process.env.DB_PASSWORD)}@${process.env.DB_HOST}:${process.env.DB_PORT}/${e(process.env.DB_NAME)}`))')"
+{{- end -}}
+
+{{/* Same rationale as nexus-scheduler.exportDatabaseUrlSnippet above. */}}
+{{- define "nexus-scheduler.exportRedisUrlSnippet" -}}
+eval "$(node -e 'const e=encodeURIComponent;console.log("export REDIS_URL="+JSON.stringify(`redis://:${e(process.env.REDIS_PASSWORD)}@${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`))')"
 {{- end -}}
