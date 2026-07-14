@@ -34,9 +34,10 @@ explicitly configured rather than fetched at install time.
   approval from an eligible approver (other than whoever made the
   change) before they'll actually run; private-project schedules
   auto-approve.
-- **Run history & manual runs** — full history per Job with output,
-  status, token usage, and cost, plus an on-demand "Run Now" button
-  alongside the schedule.
+- **Run history & manual runs** — full history per Job with output
+  (rendered as markdown, since most agent models format their answers
+  that way), status, token usage, and cost, plus an on-demand "Run Now"
+  button alongside the schedule.
 - **Usage & cost reporting** — per-run token/cost tracking with
   configurable rates, an admin usage dashboard, CSV/PDF export, and
   optional recurring report emails.
@@ -52,6 +53,13 @@ explicitly configured rather than fetched at install time.
 - **Branding & classification** — configurable product name, logo
   (doubles as the favicon), accent color, dark mode, and an optional
   persistent classification banner with admin-managed labels.
+- **Login-screen consent banner** — an optional, admin-configurable
+  notice (custom title/body) shown before authentication. It can be
+  purely informational, or require an explicit Accept/Reject before the
+  sign-in form is shown at all — rejecting leads to a dead-end page,
+  and acceptance is audit-logged. Re-shown on every visit to the login
+  page rather than remembered, matching how consent-to-monitor banners
+  are expected to behave.
 - **Observability** — Prometheus metrics, a Postgres-backed audit log,
   and an optional RFC 5424 syslog mirror for SIEM integration.
 - **Admin console** — user/role management, classification taxonomy,
