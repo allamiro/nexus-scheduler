@@ -22,6 +22,7 @@ import {
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
@@ -736,11 +737,13 @@ function JobFormFields({
           onChange={(e) => onChange({ ...values, agentId: e.target.value })}
           fullWidth
           helperText={
-            values.apiKeyId && agentsQuery.isError
-              ? "Couldn't auto-discover Agents for this key — enter the ID manually."
-              : values.apiKeyId && agentsQuery.isLoading
-                ? "Looking up available Agents…"
-                : undefined
+            !values.apiKeyId
+              ? "Select an API key above to discover its Agents."
+              : agentsQuery.isError
+                ? "Couldn't auto-discover Agents for this key — enter the ID manually."
+                : agentsQuery.isLoading
+                  ? "Looking up available Agents…"
+                  : undefined
           }
         />
       )}
@@ -784,6 +787,20 @@ function isValidJobTiming(values: Pick<JobFormValues, "timeoutSeconds" | "maxRet
       Number.isInteger(values.timeoutSeconds) && values.timeoutSeconds >= 1 && values.timeoutSeconds <= 3600,
     maxRetriesValid: Number.isInteger(values.maxRetries) && values.maxRetries >= 0 && values.maxRetries <= 5,
   };
+}
+
+// Surfaces *why* the Create/Save button is disabled instead of leaving
+// it silently greyed out — checked in the same order a user fills the
+// form in, so the message always points at the next thing to fix.
+function missingJobPrerequisite(values: JobFormValues): string | null {
+  if (!values.name) return "Name the Job.";
+  if (!values.promptId) return "Choose a Prompt.";
+  if (!values.apiKeyId) return "Select an API key — Jobs need one to call an Agent.";
+  if (!values.agentId) return "Select (or enter) an Agent.";
+  const timing = isValidJobTiming(values);
+  if (!timing.timeoutSecondsValid) return "Timeout must be 1–3600 seconds.";
+  if (!timing.maxRetriesValid) return "Max retries must be 0–5.";
+  return null;
 }
 
 // Jobs live inside a Project the same way Prompts do — one call to
@@ -979,22 +996,18 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            disabled={
-              !createForm.name ||
-              !createForm.promptId ||
-              !createForm.agentId ||
-              !createForm.apiKeyId ||
-              !isValidJobTiming(createForm).timeoutSecondsValid ||
-              !isValidJobTiming(createForm).maxRetriesValid ||
-              createJob.isPending
-            }
-            onClick={() => createJob.mutate()}
-          >
-            Create
-          </Button>
+          <Tooltip title={missingJobPrerequisite(createForm) ?? ""}>
+            <span>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                disabled={!!missingJobPrerequisite(createForm) || createJob.isPending}
+                onClick={() => createJob.mutate()}
+              >
+                Create
+              </Button>
+            </span>
+          </Tooltip>
         </DialogActions>
       </Dialog>
 
@@ -1017,22 +1030,18 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditingJob(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            disabled={
-              !editForm.name ||
-              !editForm.promptId ||
-              !editForm.agentId ||
-              !editForm.apiKeyId ||
-              !isValidJobTiming(editForm).timeoutSecondsValid ||
-              !isValidJobTiming(editForm).maxRetriesValid ||
-              updateJob.isPending
-            }
-            onClick={() => updateJob.mutate()}
-          >
-            Save
-          </Button>
+          <Tooltip title={missingJobPrerequisite(editForm) ?? ""}>
+            <span>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                disabled={!!missingJobPrerequisite(editForm) || updateJob.isPending}
+                onClick={() => updateJob.mutate()}
+              >
+                Save
+              </Button>
+            </span>
+          </Tooltip>
         </DialogActions>
       </Dialog>
 

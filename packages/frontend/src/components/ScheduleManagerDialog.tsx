@@ -27,6 +27,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import SaveIcon from "@mui/icons-material/Save";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
+import { Link as RouterLink } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { useConfirm } from "../context/ConfirmContext";
 import type { PromptVariableDraft } from "./VariableEditor";
@@ -346,7 +347,11 @@ export function ScheduleManagerDialog({
               </ListItem>
             ))}
             {schedulesQuery.data?.length === 0 && (
-              <Typography color="text.secondary">No schedules yet for this Job.</Typography>
+              <Typography color="text.secondary">
+                No schedules yet for this Job. A schedule runs this Job automatically — one-time,
+                on an interval, or by cron — and, if it's on a shared Project, may need approval
+                before it's live. See <RouterLink to="/help/schedules">Schedules & approvals</RouterLink>.
+              </Typography>
             )}
           </List>
 

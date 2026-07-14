@@ -21,6 +21,7 @@ import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import HistoryIcon from "@mui/icons-material/History";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link as RouterLink } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { RunStatusIcon, RUN_STATUS_COLOR, type RunStatus } from "./RunStatusIcon";
 
@@ -173,7 +174,11 @@ export function RunHistoryDialog({
             </Box>
           ))}
           {runsQuery.data?.length === 0 && (
-            <Typography color="text.secondary">No runs yet.</Typography>
+            <Typography color="text.secondary">
+              No runs yet. Runs appear here after this Job executes —{" "}
+              {canRun ? 'use "Run Now" below, or attach a schedule to run it automatically.' : "it runs on-demand or on a schedule."}{" "}
+              See <RouterLink to="/help/runs">Runs, output & PDF reports</RouterLink>.
+            </Typography>
           )}
         </List>
       </DialogContent>
