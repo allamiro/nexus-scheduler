@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -161,7 +162,10 @@ export function ProjectsPage() {
             </ListItem>
           ))}
           {projectsQuery.data?.length === 0 && (
-            <Typography color="text.secondary">No Projects you can see yet.</Typography>
+            <Typography color="text.secondary">
+              No Projects you can see yet. Projects group your prompts and jobs — create one to
+              get started. See <RouterLink to="/help/projects">Projects & sharing</RouterLink>.
+            </Typography>
           )}
         </List>
       </Box>
@@ -555,7 +559,11 @@ function ProjectPromptsPanel({ projectId, canEdit }: { projectId: string; canEdi
           </ListItem>
         ))}
         {promptsQuery.data?.length === 0 && (
-          <Typography color="text.secondary">No prompts in this Project yet.</Typography>
+          <Typography color="text.secondary">
+            No prompts in this Project yet. A prompt is a reusable template — it just needs a name
+            and content, no API key required. See{" "}
+            <RouterLink to="/help/prompts">Prompt Library & saved prompts</RouterLink>.
+          </Typography>
         )}
       </List>
 
@@ -945,7 +953,10 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
           </ListItem>
         ))}
         {jobsQuery.data?.length === 0 && (
-          <Typography color="text.secondary">No Jobs in this Project yet.</Typography>
+          <Typography color="text.secondary">
+            No Jobs in this Project yet. A Job runs an agent — add an API key first, then pick an
+            agent. See <RouterLink to="/help/jobs">Jobs, notifications & webhooks</RouterLink>.
+          </Typography>
         )}
       </List>
 

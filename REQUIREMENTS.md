@@ -379,6 +379,15 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
     used).
   - SMTP server settings configurable by admin (host, port, TLS, auth,
     from-address).
+- **In-app Help**: a top-level Help menu (Knowledge Base, Keyboard
+  Shortcuts, About) bundled into the SPA — works fully offline, consistent
+  with the air-gapped constraint (§3). The Knowledge Base explains what the
+  app is for, core concepts/glossary, a getting-started quickstart, and a
+  how-to article per module (Dashboard, Projects, Prompts, Jobs, Schedules,
+  Runs, Teams, API Keys, Admin), plus troubleshooting/FAQ — searchable and
+  deep-linkable, with contextual links from empty states (e.g. an empty
+  Jobs/Prompts list points at the relevant article). About shows the
+  running app version and product name.
 
 ## 6. Classification & Marking
 

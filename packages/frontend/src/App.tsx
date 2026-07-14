@@ -14,6 +14,10 @@ import { PromptLibraryPage } from "./pages/PromptLibraryPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { ApiKeysPage } from "./pages/ApiKeysPage";
 import { AdminPage } from "./pages/AdminPage";
+import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
+import { KbArticlePage } from "./pages/KbArticlePage";
+import { ShortcutsPage } from "./pages/ShortcutsPage";
+import { AboutPage } from "./pages/AboutPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { ConsentDeclinedPage } from "./pages/ConsentDeclinedPage";
@@ -59,6 +63,10 @@ function ThemedApp() {
                 <Route path="/teams" element={<RequireAuth><TeamsPage /></RequireAuth>} />
                 <Route path="/api-keys" element={<RequireAuth><ApiKeysPage /></RequireAuth>} />
                 <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
+                <Route path="/help" element={<RequireAuth><KnowledgeBasePage /></RequireAuth>} />
+                <Route path="/help/shortcuts" element={<RequireAuth><ShortcutsPage /></RequireAuth>} />
+                <Route path="/help/about" element={<RequireAuth><AboutPage /></RequireAuth>} />
+                <Route path="/help/:slug" element={<RequireAuth><KbArticlePage /></RequireAuth>} />
               </Routes>
             </AppLayout>
           </BrowserRouter>

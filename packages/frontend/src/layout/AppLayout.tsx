@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { AppBar, Avatar, Box, Button, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
+import { useState, type ReactNode } from "react";
+import { AppBar, Avatar, Box, Button, IconButton, Menu, MenuItem, Toolbar, Tooltip, Typography } from "@mui/material";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
@@ -9,6 +9,9 @@ import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import KeyboardOutlinedIcon from "@mui/icons-material/KeyboardOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { Link as RouterLink } from "react-router-dom";
 import { ClassificationBanner } from "../components/ClassificationBanner";
@@ -36,6 +39,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { settings } = useSettings();
   const { mode, toggleMode } = useColorMode();
+  const [helpMenuAnchor, setHelpMenuAnchor] = useState<HTMLElement | null>(null);
   const bannerConfig = {
     text: settings.classificationBannerText,
     backgroundColor: settings.classificationBannerBgColor,
@@ -60,6 +64,26 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 </Button>
               ))}
             </Box>
+            <Button
+              color="inherit"
+              startIcon={<HelpOutlineIcon fontSize="small" />}
+              onClick={(e) => setHelpMenuAnchor(e.currentTarget)}
+              aria-haspopup="true"
+              aria-expanded={helpMenuAnchor !== null}
+            >
+              Help
+            </Button>
+            <Menu anchorEl={helpMenuAnchor} open={helpMenuAnchor !== null} onClose={() => setHelpMenuAnchor(null)}>
+              <MenuItem component={RouterLink} to="/help" onClick={() => setHelpMenuAnchor(null)}>
+                <MenuBookOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Knowledge Base
+              </MenuItem>
+              <MenuItem component={RouterLink} to="/help/shortcuts" onClick={() => setHelpMenuAnchor(null)}>
+                <KeyboardOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> Keyboard Shortcuts
+              </MenuItem>
+              <MenuItem component={RouterLink} to="/help/about" onClick={() => setHelpMenuAnchor(null)}>
+                <InfoOutlinedIcon fontSize="small" sx={{ mr: 1 }} /> About
+              </MenuItem>
+            </Menu>
             <Typography variant="body2">
               {user.displayName ?? user.email} ({user.role})
             </Typography>
