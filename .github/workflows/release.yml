@@ -77,11 +77,20 @@ jobs:
           version: v3.16.2
 
       - name: helm package
-        # Chart.yaml's version/appVersion were already stamped to this
-        # release's version by scripts/release.mjs before the tag was cut
-        # (same as the image tags above) — packaging just picks that up,
-        # no --version override needed here.
-        run: helm package helm/nexus-scheduler --destination .
+        # Explicitly overrides Chart.yaml's committed version/appVersion
+        # with the tag's version rather than trusting they already match
+        # (scripts/release.mjs stamps them before a normal release, but
+        # nothing enforces that a pushed tag went through that script —
+        # a tag pushed without it left Chart.yaml stale and broke the
+        # "helm push" step below, which assumes the packaged filename
+        # matches the tag). This makes the published chart version
+        # authoritative from the tag, the same way the image tags above
+        # already are, regardless of what's committed in Chart.yaml.
+        run: |
+          helm package helm/nexus-scheduler \
+            --version "${{ steps.version.outputs.version }}" \
+            --app-version "${{ steps.version.outputs.version }}" \
+            --destination .
 
       - name: helm push (OCI)
         run: |
