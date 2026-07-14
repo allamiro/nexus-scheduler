@@ -24,6 +24,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Save";
 import BlockIcon from "@mui/icons-material/Block";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
+import { Link as RouterLink } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { useConfirm } from "../context/ConfirmContext";
 
@@ -161,7 +162,11 @@ export function ApiKeysPage() {
           </ListItem>
         ))}
         {keysQuery.data?.length === 0 && (
-          <Typography color="text.secondary">No API keys yet.</Typography>
+          <Typography color="text.secondary">
+            No API keys yet. Add one to connect to your LibreChat Agents API — a key is what
+            unlocks agents for a Job to run against. See{" "}
+            <RouterLink to="/help/api-keys">API Keys & agent discovery</RouterLink>.
+          </Typography>
         )}
       </List>
       {revokeKey.isError && (
