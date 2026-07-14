@@ -12,6 +12,28 @@ import { requireProjectAccess } from "../middleware/requireProjectAccess.js";
 import { listAccessibleProjects } from "../access.js";
 import { recordAuditEvent } from "../audit.js";
 
+// Resolves a project ACL's grantee to a human-readable audit subject
+// (§41) — update/revoke only have the raw granteeUserId/granteeTeamId
+// from the (already-fetched-or-deleted) ACL row, unlike grant, which
+// resolves this while validating the request body.
+async function resolveAclGrantee(acl: {
+  granteeType: "USER" | "TEAM" | "ORG";
+  granteeUserId: string | null;
+  granteeTeamId: string | null;
+}): Promise<{ subjectType: string; subjectId?: string; subjectName?: string }> {
+  if (acl.granteeType === "USER" && acl.granteeUserId) {
+    const grantee = await prisma.user.findUnique({ where: { id: acl.granteeUserId }, select: { email: true } });
+    return { subjectType: "user", subjectId: acl.granteeUserId, subjectName: grantee?.email };
+  }
+  if (acl.granteeType === "TEAM" && acl.granteeTeamId) {
+    const grantee = await prisma.team.findUnique({ where: { id: acl.granteeTeamId }, select: { name: true } });
+    return { subjectType: "team", subjectId: acl.granteeTeamId, subjectName: grantee?.name };
+  }
+  // ORG grants apply to the whole organization — there's no single
+  // second principal to resolve.
+  return { subjectType: "org", subjectName: "organization" };
+}
+
 // Projects are shared containers for prompts/jobs (REQUIREMENTS.md
 // §2.3). Sharing config (the ACL sub-resource) is deliberately
 // OWNER-only to view/mutate — "a Project owner can share a Project"
@@ -177,12 +199,17 @@ export function createProjectsRouter(): Router {
     }
     const user = req.session.user!;
 
+    // Resolved once here and reused below for the audit event's subject
+    // (§41) — previously fetched only to validate existence, then
+    // discarded, leaving the grantee as a raw UUID in the audit trail.
+    let subjectName: string | undefined = parsed.data.granteeType === "ORG" ? "organization" : undefined;
     if (parsed.data.granteeType === "USER") {
       const grantee = await prisma.user.findUnique({ where: { id: parsed.data.granteeUserId! } });
       if (!grantee) {
         res.status(400).json({ error: "granteeUserId does not exist" });
         return;
       }
+      subjectName = grantee.email;
     }
     if (parsed.data.granteeType === "TEAM") {
       const grantee = await prisma.team.findUnique({ where: { id: parsed.data.granteeTeamId! } });
@@ -190,15 +217,19 @@ export function createProjectsRouter(): Router {
         res.status(400).json({ error: "granteeTeamId does not exist" });
         return;
       }
+      subjectName = grantee.name;
     }
 
-    const acl = await prisma.projectAcl.create({
-      data: { projectId: req.params.id!, ...parsed.data },
-    });
-    // `visibility` is a display hint derived from ACL rows, not a
-    // separate access-control source of truth — actual access is always
-    // resolved from the ACL table via getProjectAccess().
-    await prisma.project.update({ where: { id: req.params.id }, data: { visibility: "SHARED" } });
+    const [acl, project] = await Promise.all([
+      prisma.projectAcl.create({ data: { projectId: req.params.id!, ...parsed.data } }),
+      prisma.project.update({
+        // `visibility` is a display hint derived from ACL rows, not a
+        // separate access-control source of truth — actual access is
+        // always resolved from the ACL table via getProjectAccess().
+        where: { id: req.params.id },
+        data: { visibility: "SHARED" },
+      }),
+    ]);
 
     await recordAuditEvent({
       req,
@@ -208,8 +239,13 @@ export function createProjectsRouter(): Router {
       action: "project.acl.grant",
       targetType: "project",
       targetId: req.params.id,
+      targetName: project.name,
+      subjectType: parsed.data.granteeType.toLowerCase(),
+      subjectId: parsed.data.granteeUserId ?? parsed.data.granteeTeamId,
+      subjectName,
+      category: "authz_change",
       result: "SUCCESS",
-      details: parsed.data,
+      details: { accessLevel: parsed.data.accessLevel },
     });
 
     res.status(201).json(acl);
@@ -222,10 +258,15 @@ export function createProjectsRouter(): Router {
       return;
     }
     const user = req.session.user!;
-    const acl = await prisma.projectAcl.update({
-      where: { id: req.params.aclId },
-      data: { accessLevel: parsed.data.accessLevel },
-    });
+    const before = await prisma.projectAcl.findUniqueOrThrow({ where: { id: req.params.aclId } });
+    const [acl, project, subject] = await Promise.all([
+      prisma.projectAcl.update({
+        where: { id: req.params.aclId },
+        data: { accessLevel: parsed.data.accessLevel },
+      }),
+      prisma.project.findUnique({ where: { id: req.params.id }, select: { name: true } }),
+      resolveAclGrantee(before),
+    ]);
 
     await recordAuditEvent({
       req,
@@ -235,8 +276,17 @@ export function createProjectsRouter(): Router {
       action: "project.acl.update",
       targetType: "project",
       targetId: req.params.id,
+      targetName: project?.name,
+      subjectType: subject.subjectType,
+      subjectId: subject.subjectId,
+      subjectName: subject.subjectName,
+      category: "authz_change",
+      changes:
+        before.accessLevel !== acl.accessLevel
+          ? { accessLevel: { from: before.accessLevel, to: acl.accessLevel } }
+          : undefined,
       result: "SUCCESS",
-      details: { aclId: acl.id, accessLevel: acl.accessLevel },
+      details: { aclId: acl.id },
     });
 
     res.json(acl);
@@ -246,7 +296,11 @@ export function createProjectsRouter(): Router {
     const user = req.session.user!;
     const acl = await prisma.projectAcl.delete({ where: { id: req.params.aclId } });
 
-    const remaining = await prisma.projectAcl.count({ where: { projectId: req.params.id } });
+    const [remaining, project, subject] = await Promise.all([
+      prisma.projectAcl.count({ where: { projectId: req.params.id } }),
+      prisma.project.findUnique({ where: { id: req.params.id }, select: { name: true } }),
+      resolveAclGrantee(acl),
+    ]);
     if (remaining === 0) {
       await prisma.project.update({ where: { id: req.params.id }, data: { visibility: "PRIVATE" } });
     }
@@ -259,8 +313,13 @@ export function createProjectsRouter(): Router {
       action: "project.acl.revoke",
       targetType: "project",
       targetId: req.params.id,
+      targetName: project?.name,
+      subjectType: subject.subjectType,
+      subjectId: subject.subjectId,
+      subjectName: subject.subjectName,
+      category: "authz_change",
       result: "SUCCESS",
-      details: { aclId: acl.id, granteeType: acl.granteeType },
+      details: { aclId: acl.id },
     });
 
     res.status(204).send();

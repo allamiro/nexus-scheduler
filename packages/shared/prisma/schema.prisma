@@ -569,13 +569,47 @@ model AuditEvent {
   targetType    String
   targetId      String?
   targetName    String?
+  // The "affected second principal" (§41) — e.g. the user added to a
+  // team, the grantee of a project ACL, the target of a role change.
+  // Structurally identical to target* above (a resource an event is
+  // about), just distinguishing "the thing acted on" (target) from "a
+  // related entity the action affects" (subject) for actions like
+  // team.membership.add where those are two different objects.
+  subjectType   String?
+  subjectId     String?
+  subjectName   String?
   result        AuditResult
   errorMessage  String?
   sourceIp      String?
+  // Session-scoped (a hash of the session id, never the raw id — same
+  // sensitivity as a bearer credential), so every event from one login
+  // session shares a correlationId and a SIEM can tie e.g. a login to a
+  // later privileged change in that session. Worker events have no
+  // session and instead set this to the runId that ties multiple events
+  // about one run together.
   correlationId String?
+  // Per-HTTP-request id (distinct from correlationId's per-session
+  // scope) — lets one request's audit event(s) be tied back to the
+  // matching pino request log line. Null for worker events (no HTTP
+  // request).
+  requestId     String?
+  httpMethod    String?
+  httpPath      String?
+  userAgent     String?
+  // Event classification for SIEM alerting/severity (§41) — e.g.
+  // "authn", "authz_change", "admin", "data_access". Plain string like
+  // action/targetType above rather than an enum, so a new category
+  // doesn't need a schema migration.
+  category      String?
+  // Before->after diff for *.update actions, e.g.
+  // { "role": { "from": "VIEW", "to": "ADMIN" } }. Never include secret
+  // values (passwords/keys) — record a boolean changed-flag instead, as
+  // settings.ts already does for SMTP password.
+  changes       Json?
   details       Json?
 
   @@index([timestamp])
   @@index([correlationId])
+  @@index([subjectId])
   @@map("audit_events")
 }

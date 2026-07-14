@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import express, { type Express } from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -49,7 +50,23 @@ export function createApp(config: AppConfig, logger: Logger): Express {
   app.use(helmet());
   app.use(cors({ origin: false })); // same-origin via nginx in production; adjust for local dev if needed
   app.use(express.json({ limit: "1mb" }));
-  app.use(pinoHttp({ logger }));
+  app.use(
+    pinoHttp({
+      logger,
+      // Default genReqId is only unique within one process (a plain
+      // incrementing counter) — not useful as a cross-request/service
+      // correlation id. Honor an inbound X-Request-Id from the reverse
+      // proxy/ingress when present so a request can be traced across
+      // hops, otherwise mint a real UUID (§41); recordAuditEvent reads
+      // this back off req.id to populate the audit event's requestId.
+      genReqId: (req, res) => {
+        const inbound = req.headers["x-request-id"];
+        const id = typeof inbound === "string" && inbound ? inbound : randomUUID();
+        res.setHeader("x-request-id", id);
+        return id;
+      },
+    }),
+  );
   app.use(metricsMiddleware(metrics));
 
   app.use(

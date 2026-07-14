@@ -92,6 +92,12 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       return;
     }
     const returnTo = pending.returnTo;
+    // Captured as soon as it's known so the failure path below can
+    // attribute a failed callback to the attempted identity instead of
+    // "unknown" whenever the claim was actually readable (§41) — a
+    // failure can still happen after this point (role mapping, the
+    // upsert, session regeneration).
+    let attemptedEmail: string | undefined;
 
     try {
       const client = await getOrInitOidcClient(config, logger);
@@ -111,6 +117,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
         res.status(400).json({ error: "OIDC token did not include an email claim" });
         return;
       }
+      attemptedEmail = email;
 
       const role = mapKeycloakRole(
         claims as unknown as Record<string, unknown>,
@@ -156,6 +163,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
         action: "login.success",
         targetType: "user",
         targetId: user.id,
+        category: "authn",
         result: "SUCCESS",
       });
 
@@ -165,10 +173,11 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       await recordAuditEvent({
         req,
         actorType: "USER",
-        actorId: "unknown",
-        actorEmail: "unknown",
+        actorId: attemptedEmail ?? "unknown",
+        actorEmail: attemptedEmail ?? "unknown",
         action: "login.failure",
         targetType: "user",
+        category: "authn",
         result: "FAILURE",
         errorMessage: err instanceof Error ? err.message : "unknown error",
       });
@@ -185,12 +194,14 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
     });
     if (user) {
       await recordAuditEvent({
+        req,
         actorType: "USER",
         actorId: user.id,
         actorEmail: user.email,
         action: "logout.success",
         targetType: "user",
         targetId: user.id,
+        category: "authn",
         result: "SUCCESS",
       });
     }
@@ -235,6 +246,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
         actorEmail: parsed.data.email,
         action: "login.failure",
         targetType: "user",
+        category: "authn",
         result: "FAILURE",
         errorMessage: "invalid credentials",
       });
@@ -259,6 +271,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       action: "login.success",
       targetType: "user",
       targetId: user.id,
+      category: "authn",
       result: "SUCCESS",
     });
 
@@ -323,6 +336,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       action: "user.password_reset",
       targetType: "user",
       targetId: user.id,
+      category: "authn",
       result: "SUCCESS",
     });
 
@@ -343,6 +357,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       actorEmail: "unknown",
       action: "consent_banner.accept",
       targetType: "system_setting",
+      category: "authn",
       result: "SUCCESS",
     });
     res.status(204).send();

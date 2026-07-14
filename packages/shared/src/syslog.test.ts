@@ -42,6 +42,73 @@ describe("buildRfc5424Message", () => {
     expect(failureMsg.startsWith("<132>1 ")).toBe(true);
   });
 
+  // §41: a successful privilege escalation/ACL grant/admin action
+  // shouldn't blend in with routine reads at informational severity.
+  it("bumps SUCCESS severity to 5 (notice) for security-sensitive categories", () => {
+    const authzMsg = buildRfc5424Message({ ...baseFields, result: "SUCCESS", category: "authz_change" });
+    const adminMsg = buildRfc5424Message({ ...baseFields, result: "SUCCESS", category: "admin" });
+    // facility 16 * 8 = 128; +5 = 133
+    expect(authzMsg.startsWith("<133>1 ")).toBe(true);
+    expect(adminMsg.startsWith("<133>1 ")).toBe(true);
+  });
+
+  it("leaves non-sensitive categories and FAILUREs of any category at their normal severity", () => {
+    const dataAccessMsg = buildRfc5424Message({ ...baseFields, result: "SUCCESS", category: "data_access" });
+    const failedAuthzMsg = buildRfc5424Message({ ...baseFields, result: "FAILURE", category: "authz_change" });
+    expect(dataAccessMsg.startsWith("<134>1 ")).toBe(true); // still informational
+    expect(failedAuthzMsg.startsWith("<132>1 ")).toBe(true); // still warning, not further escalated
+  });
+
+  // §41: the affected second principal (e.g. the user added to a team),
+  // distinct from targetType/Id/Name.
+  it("includes subject fields in structured data and the MSG summary when present", () => {
+    const msg = buildRfc5424Message({
+      ...baseFields,
+      subjectType: "user",
+      subjectId: "user-2",
+      subjectName: "added@example.com",
+    });
+    expect(msg).toContain('subjectType="user"');
+    expect(msg).toContain('subjectId="user-2"');
+    expect(msg).toContain('subjectName="added@example.com"');
+    expect(msg).toContain("subject=added@example.com");
+  });
+
+  it("includes requestId, HTTP method/path, user-agent, and category as their own SD-PARAMs", () => {
+    const msg = buildRfc5424Message({
+      ...baseFields,
+      requestId: "req-1",
+      httpMethod: "PATCH",
+      httpPath: "/api/teams/:teamId/members/:userId",
+      userAgent: "Mozilla/5.0 test-agent",
+      category: "admin",
+    });
+    expect(msg).toContain('requestId="req-1"');
+    expect(msg).toContain('httpMethod="PATCH"');
+    expect(msg).toContain('httpPath="/api/teams/:teamId/members/:userId"');
+    expect(msg).toContain('userAgent="Mozilla/5.0 test-agent"');
+    expect(msg).toContain('category="admin"');
+  });
+
+  // §41: changes must be queryable STRUCTURED-DATA, not buried in the
+  // free-text MSG/details blob.
+  it("JSON-encodes before->after changes as its own SD-PARAM", () => {
+    const msg = buildRfc5424Message({
+      ...baseFields,
+      changes: { role: { from: "VIEW", to: "ADMIN" } },
+    });
+    expect(msg).toContain(`changes="${JSON.stringify({ role: { from: "VIEW", to: "ADMIN" } }).replace(/"/g, '\\"')}"`);
+  });
+
+  it("omits subject/requestId/http*/category/changes SD-PARAMs entirely when absent", () => {
+    const msg = buildRfc5424Message(baseFields);
+    expect(msg).not.toContain("subjectType=");
+    expect(msg).not.toContain("requestId=");
+    expect(msg).not.toContain("httpMethod=");
+    expect(msg).not.toContain("category=");
+    expect(msg).not.toContain("changes=");
+  });
+
   // Regression for #26: sourceIp was dropped entirely from the SIEM
   // mirror even though Postgres has it.
   it("includes sourceIp in the structured data when present", () => {

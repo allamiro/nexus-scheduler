@@ -55,11 +55,28 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
       return;
     }
 
+    // Fetched before the update so role/active changes can be logged as
+    // a from->to diff (§41) — without this, a USER->ADMIN promotion (or
+    // an active->inactive deactivation) only ever shows the new value,
+    // with the prior one lost.
+    const before = await prisma.user.findUniqueOrThrow({
+      where: { id: req.params.id },
+      select: { role: true, active: true },
+    });
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: parsed.data,
       select: { id: true, email: true, displayName: true, role: true, active: true, authSource: true },
     });
+
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    if (parsed.data.role !== undefined && parsed.data.role !== before.role) {
+      changes.role = { from: before.role, to: user.role };
+    }
+    if (parsed.data.active !== undefined && parsed.data.active !== before.active) {
+      changes.active = { from: before.active, to: user.active };
+    }
 
     await recordAuditEvent({
       req,
@@ -70,6 +87,8 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
       targetType: "user",
       targetId: user.id,
       targetName: user.email,
+      category: "authz_change",
+      changes: Object.keys(changes).length > 0 ? changes : undefined,
       result: "SUCCESS",
       details: parsed.data,
     });

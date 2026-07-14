@@ -185,11 +185,15 @@ export function createTeamsRouter(): Router {
     // Always joins as a plain member — ownership is a deliberate,
     // separate promotion step (PATCH .../members/:userId), never
     // implicit on add.
-    const membership = await prisma.teamMembership.upsert({
-      where: { teamId_userId: { teamId: req.params.id!, userId: parsed.data.userId } },
-      create: { teamId: req.params.id!, userId: parsed.data.userId },
-      update: {},
-    });
+    const [membership, team, addedUser] = await Promise.all([
+      prisma.teamMembership.upsert({
+        where: { teamId_userId: { teamId: req.params.id!, userId: parsed.data.userId } },
+        create: { teamId: req.params.id!, userId: parsed.data.userId },
+        update: {},
+      }),
+      prisma.team.findUnique({ where: { id: req.params.id }, select: { name: true } }),
+      prisma.user.findUnique({ where: { id: parsed.data.userId }, select: { email: true } }),
+    ]);
 
     await recordAuditEvent({
       req,
@@ -199,8 +203,12 @@ export function createTeamsRouter(): Router {
       action: "team.membership.add",
       targetType: "team",
       targetId: req.params.id,
+      targetName: team?.name,
+      subjectType: "user",
+      subjectId: parsed.data.userId,
+      subjectName: addedUser?.email,
+      category: "authz_change",
       result: "SUCCESS",
-      details: { addedUserId: parsed.data.userId },
     });
 
     res.status(201).json(membership);
@@ -236,10 +244,14 @@ export function createTeamsRouter(): Router {
       }
     }
 
-    const updated = await prisma.teamMembership.update({
-      where: { teamId_userId: { teamId: req.params.id!, userId: req.params.userId! } },
-      data: { isOwner: parsed.data.isOwner },
-    });
+    const [updated, team, targetUser] = await Promise.all([
+      prisma.teamMembership.update({
+        where: { teamId_userId: { teamId: req.params.id!, userId: req.params.userId! } },
+        data: { isOwner: parsed.data.isOwner },
+      }),
+      prisma.team.findUnique({ where: { id: req.params.id }, select: { name: true } }),
+      prisma.user.findUnique({ where: { id: req.params.userId }, select: { email: true } }),
+    ]);
 
     await recordAuditEvent({
       req,
@@ -249,8 +261,20 @@ export function createTeamsRouter(): Router {
       action: "team.membership.update",
       targetType: "team",
       targetId: req.params.id,
+      targetName: team?.name,
+      subjectType: "user",
+      subjectId: req.params.userId,
+      subjectName: targetUser?.email,
+      category: "authz_change",
+      // membership was fetched (and confirmed to exist) above, before
+      // this update — its isOwner is the "from" side of the diff (§41),
+      // otherwise a promotion and a demotion look identical in the log
+      // (both just show the new isOwner value).
+      changes:
+        membership.isOwner !== updated.isOwner
+          ? { isOwner: { from: membership.isOwner, to: updated.isOwner } }
+          : undefined,
       result: "SUCCESS",
-      details: { targetUserId: req.params.userId, isOwner: parsed.data.isOwner },
     });
 
     res.json(updated);
@@ -276,9 +300,13 @@ export function createTeamsRouter(): Router {
       }
     }
 
-    await prisma.teamMembership.delete({
-      where: { teamId_userId: { teamId: req.params.id!, userId: req.params.userId! } },
-    });
+    const [, team, removedUser] = await Promise.all([
+      prisma.teamMembership.delete({
+        where: { teamId_userId: { teamId: req.params.id!, userId: req.params.userId! } },
+      }),
+      prisma.team.findUnique({ where: { id: req.params.id }, select: { name: true } }),
+      prisma.user.findUnique({ where: { id: req.params.userId }, select: { email: true } }),
+    ]);
 
     await recordAuditEvent({
       req,
@@ -288,8 +316,12 @@ export function createTeamsRouter(): Router {
       action: "team.membership.remove",
       targetType: "team",
       targetId: req.params.id,
+      targetName: team?.name,
+      subjectType: "user",
+      subjectId: req.params.userId,
+      subjectName: removedUser?.email,
+      category: "authz_change",
       result: "SUCCESS",
-      details: { removedUserId: req.params.userId },
     });
 
     res.status(204).send();

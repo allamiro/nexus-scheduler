@@ -442,18 +442,32 @@ enough context to investigate an incident). Proposed minimal schema:
 | `target_type` | `job` \| `schedule` \| `run` \| `project` \| `prompt` \| `team` \| `user` \| `apikey` \| `system_setting` \| `webhook`. |
 | `target_id` | ID of the affected resource. |
 | `target_name` | Denormalized display name of the target *at the time of the event* (survives later renames/deletes). |
+| `subject_type` / `subject_id` / `subject_name` | The affected **second principal**, when the action has one distinct from the target — e.g. `team.membership.add` targets the team but its subject is the user being added; `project.acl.grant` targets the project but its subject is the grantee. Resolved to a human-readable identity (email/display name), never left as a bare ID. Absent for actions with no second principal (e.g. `user.update`, where the target *is* the affected person). |
 | `result` | `success` \| `failure`, plus `error_message` when applicable. |
 | `source_ip` | Client IP for UI/API-driven actions (null for internal scheduler-initiated events). |
-| `correlation_id` | Groups related events (e.g. one `correlation_id` ties `run.start` → `run.complete` → `notification.sent` for a single job run). |
-| `details` | JSON blob for action-specific context (e.g. changed-field diff on an update, or the LibreChat request/response metadata for a run). |
+| `correlation_id` | Session-scoped for API events — a hash of the session id (never the raw id), so every event from one login session shares a value and a login can be tied to a later privileged action in the same session. Worker events use the `run_id` instead, tying together the events produced by one job run (`run.start` → `run.complete` → `notification.sent`). |
+| `request_id` | Per-HTTP-request id, distinct from `correlation_id`'s per-session scope — ties one request's audit event back to the matching application log line. Honors an inbound `X-Request-Id` from the reverse proxy when present. Null for worker events (no HTTP request). |
+| `http_method` / `http_path` | The request's method and route pattern (e.g. `PATCH /api/teams/:teamId/members/:userId`) — null for worker events. |
+| `user_agent` | The client's `User-Agent` header — null for worker events. |
+| `category` | Event classification for SIEM alerting/severity: `authn` \| `authz_change` \| `admin` \| `data_access` \| `lifecycle`. Drives the syslog severity bump below. |
+| `changes` | Before→after diff for `*.update`/promote-demote actions, as `{ field: { from, to } }` — e.g. a role change records the prior role, not just the new one. Never includes secret values (a changed-flag boolean is recorded instead, as already done for the SMTP password). |
+| `details` | JSON blob for any remaining action-specific context not covered by the structured fields above (e.g. the LibreChat request/response metadata for a run). |
 
 This is the row shape stored in PostgreSQL. When mirrored to **syslog**
 (below), fields map onto RFC 5424 as: `TIMESTAMP` = `timestamp`,
 `HOSTNAME`/`APP-NAME` = the emitting pod, `MSGID` = `action`, and the rest
-(`event_id`, `actor_type`, `actor_id`, `actor_email`, `target_type`,
-`target_id`, `result`, `correlation_id`) as RFC 5424 `STRUCTURED-DATA`
-parameters under a single `nexusAudit@<enterprise-id>` SD-ID; `details`
-and a human-readable summary form the `MSG` body.
+— `event_id`, `actor_type`, `actor_id`, `actor_email`, `target_type`,
+`target_id`, `target_name`, `subject_type`, `subject_id`, `subject_name`,
+`result`, `error_message`, `correlation_id`, `request_id`, `source_ip`,
+`http_method`, `http_path`, `user_agent`, `category`, and `changes`
+(JSON-encoded) — as RFC 5424 `STRUCTURED-DATA` parameters under a single
+`nexusAudit@<enterprise-id>` SD-ID, so a SIEM can extract/query/alert on
+them directly rather than parsing free text. Only `details` and a
+human-readable summary form the `MSG` body. Severity is `warning` (4) for
+any `failure`, `notice` (5) for a `success` in a security-sensitive
+`category` (`authz_change`, `admin`), and `informational` (6) otherwise —
+so a successful privilege escalation doesn't read the same as a benign
+read.
 
 - Local log/audit retention: **14 days by default**, configurable by
   admin. This governs the **audit trail** (§7.1 events). **Job run

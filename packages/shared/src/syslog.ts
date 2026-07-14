@@ -35,6 +35,12 @@ export interface SyslogAuditFields {
   targetType: string;
   targetId?: string | null;
   targetName?: string | null;
+  // The affected second principal (§41), e.g. the user added to a team
+  // or granted a project ACL — distinct from targetType/Id/Name, which
+  // is the resource the action was performed on.
+  subjectType?: string | null;
+  subjectId?: string | null;
+  subjectName?: string | null;
   result: string;
   errorMessage?: string | null;
   correlationId?: string | null;
@@ -42,8 +48,32 @@ export interface SyslogAuditFields {
   // request to read an IP from) — sdParam already omits the SD-PARAM
   // entirely when this is null/undefined/empty.
   sourceIp?: string | null;
+  requestId?: string | null;
+  httpMethod?: string | null;
+  httpPath?: string | null;
+  userAgent?: string | null;
+  // Event classification (§41) — drives the severity bump below and
+  // lets a SIEM alert/correlate without enumerating every action string.
+  category?: string | null;
+  // Before->after diff for *.update actions — emitted as its own
+  // SD-PARAM (JSON-encoded), not folded into `details`/MSG, so a SIEM
+  // can actually extract/query it (§41).
+  changes?: unknown;
   details?: unknown;
   appName: string; // emitting service, e.g. "nexus-scheduler-api" / "-worker"
+}
+
+// Categories treated as security-sensitive enough that even a SUCCESS
+// shouldn't blend in at informational severity (§41) — a successful
+// privilege escalation or ACL grant is a materially different event
+// from a benign read, and syslog severity is the one signal a SIEM can
+// filter/alert on without parsing STRUCTURED-DATA.
+const NOTICE_WORTHY_CATEGORIES = new Set(["authz_change", "admin"]);
+
+function severityFor(result: string, category: string | null | undefined): number {
+  if (result === "FAILURE") return 4; // warning
+  if (category && NOTICE_WORTHY_CATEGORIES.has(category)) return 5; // notice
+  return 6; // informational
 }
 
 // IANA-reserved Private Enterprise Number for documentation/example use
@@ -87,13 +117,18 @@ function truncateToByteLength(value: string, maxBytes: number): string {
 
 // Builds one RFC 5424 message from an audit event, per REQUIREMENTS
 // §7.1's field mapping: TIMESTAMP=timestamp, HOSTNAME/APP-NAME=the
-// emitting pod, MSGID=action, and the rest (event_id, actor_type,
-// actor_id, actor_email, target_type, target_id, result, correlation_id)
-// as STRUCTURED-DATA under a single nexusAudit@<enterprise-id> SD-ID;
-// details and a human-readable summary form the MSG body.
+// emitting pod, MSGID=action, and the rest — including the affected
+// subject, before->after changes, request/session correlation ids, and
+// HTTP method/path/user-agent (§41) — as STRUCTURED-DATA under a single
+// nexusAudit@<enterprise-id> SD-ID, so a SIEM can extract/query/alert on
+// them directly rather than parsing a free-text blob. Only `details`
+// (action-specific, not otherwise standardized) and a human-readable
+// summary form the MSG body. Severity is bumped from informational to
+// notice for a SUCCESS in a security-sensitive category (§41) so a
+// privilege escalation doesn't read the same as a benign read.
 export function buildRfc5424Message(fields: SyslogAuditFields): string {
   const facility = 16; // local0 — REQUIREMENTS doesn't mandate a specific facility
-  const severity = fields.result === "FAILURE" ? 4 : 6; // warning / informational
+  const severity = severityFor(fields.result, fields.category);
   const pri = facility * 8 + severity;
   const version = 1;
   const timestamp = fields.timestamp.toISOString();
@@ -112,14 +147,24 @@ export function buildRfc5424Message(fields: SyslogAuditFields): string {
     sdParam("targetType", fields.targetType) +
     sdParam("targetId", fields.targetId) +
     sdParam("targetName", fields.targetName) +
+    sdParam("subjectType", fields.subjectType) +
+    sdParam("subjectId", fields.subjectId) +
+    sdParam("subjectName", fields.subjectName) +
     sdParam("result", fields.result) +
     sdParam("errorMessage", fields.errorMessage) +
     sdParam("correlationId", fields.correlationId) +
+    sdParam("requestId", fields.requestId) +
     sdParam("sourceIp", fields.sourceIp) +
+    sdParam("httpMethod", fields.httpMethod) +
+    sdParam("httpPath", fields.httpPath) +
+    sdParam("userAgent", fields.userAgent) +
+    sdParam("category", fields.category) +
+    sdParam("changes", fields.changes ? JSON.stringify(fields.changes) : undefined) +
     `]`;
 
   const targetSuffix = fields.targetId ? `:${fields.targetId}` : "";
-  const summary = `${fields.action} ${fields.result.toLowerCase()} (actor=${fields.actorEmail}, target=${fields.targetType}${targetSuffix})`;
+  const subjectSuffix = fields.subjectName ? `, subject=${fields.subjectName}` : "";
+  const summary = `${fields.action} ${fields.result.toLowerCase()} (actor=${fields.actorEmail}, target=${fields.targetType}${targetSuffix}${subjectSuffix})`;
   const detailsSuffix = fields.details ? ` ${JSON.stringify(fields.details)}` : "";
   const msg = `${summary}${detailsSuffix}`;
 
