@@ -24,7 +24,7 @@ jobs:
         # each service's own Dockerfile location.
         service: [api, worker, frontend, pdf-service]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Derive version from tag
         id: version
@@ -59,7 +59,7 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Extract this version's CHANGELOG section
         run: |
