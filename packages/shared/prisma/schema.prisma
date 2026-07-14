@@ -285,6 +285,9 @@ model Job {
   notifyOnSuccess        Boolean         @default(false)
   notifyOnFailure        Boolean         @default(false)
   attachPdfToEmail       Boolean         @default(false)
+  // Extra recipients (§58) alongside the Job owner — capped at 10,
+  // enforced in setJobNotificationsSchema below.
+  ccRecipients           String[]        @default([])
   createdById            String
   createdBy              User            @relation(fields: [createdById], references: [id])
   createdAt              DateTime        @default(now())

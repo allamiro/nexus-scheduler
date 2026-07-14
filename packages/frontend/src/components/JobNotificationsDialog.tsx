@@ -10,6 +10,7 @@ import {
   DialogTitle,
   FormControlLabel,
   Stack,
+  TextField,
   Typography,
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
@@ -20,6 +21,17 @@ export interface JobNotificationSettings {
   notifyOnSuccess: boolean;
   notifyOnFailure: boolean;
   attachPdfToEmail: boolean;
+  ccRecipients: string[];
+}
+
+const MAX_CC_RECIPIENTS = 10;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parseCcRecipients(text: string): string[] {
+  return text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 // Per-job email notification preferences (§2.2) — sent to the Job owner
@@ -37,12 +49,22 @@ export function JobNotificationsDialog({
 }) {
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<JobNotificationSettings>(initial);
+  const [ccRecipientsText, setCcRecipientsText] = useState(initial.ccRecipients.join(", "));
+
+  const ccRecipients = parseCcRecipients(ccRecipientsText);
+  const invalidCcRecipients = ccRecipients.filter((r) => !EMAIL_RE.test(r));
+  const tooManyCcRecipients = ccRecipients.length > MAX_CC_RECIPIENTS;
+  const ccRecipientsError = tooManyCcRecipients
+    ? `No more than ${MAX_CC_RECIPIENTS} additional recipients are allowed.`
+    : invalidCcRecipients.length > 0
+      ? `Not a valid email address: ${invalidCcRecipients.join(", ")}`
+      : null;
 
   const save = useMutation({
     mutationFn: () =>
       apiFetch(`/api/jobs/${jobId}/notifications`, {
         method: "PUT",
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ ...settings, ccRecipients }),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -59,7 +81,8 @@ export function JobNotificationsDialog({
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Sent to the Job owner's email address when a run finishes.
+          Sent to the Job owner's email address when a run finishes, plus any additional
+          recipients below.
         </Typography>
         <Stack spacing={1}>
           <FormControlLabel
@@ -90,6 +113,14 @@ export function JobNotificationsDialog({
             }
             label="Attach the run's PDF report instead of inline text"
           />
+          <TextField
+            label="Additional recipients (comma-separated emails)"
+            value={ccRecipientsText}
+            onChange={(e) => setCcRecipientsText(e.target.value)}
+            error={ccRecipientsError !== null}
+            helperText={ccRecipientsError ?? `Up to ${MAX_CC_RECIPIENTS} additional recipients.`}
+            fullWidth
+          />
         </Stack>
         {save.isError && (
           <Alert severity="error" sx={{ mt: 2 }}>
@@ -99,7 +130,12 @@ export function JobNotificationsDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" startIcon={<SaveIcon />} disabled={save.isPending} onClick={() => save.mutate()}>
+        <Button
+          variant="contained"
+          startIcon={<SaveIcon />}
+          disabled={save.isPending || ccRecipientsError !== null}
+          onClick={() => save.mutate()}
+        >
           Save
         </Button>
       </DialogActions>

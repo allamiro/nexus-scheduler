@@ -111,7 +111,9 @@ LibreChat exposes an **Agents API** (beta) that is OpenAI-compatible:
   duration, error if any) is persisted in PostgreSQL.
 - Users can view job run history and full output/detail in the web UI.
 - Email notification (via SMTP) is optionally sent to the job owner on
-  completion and/or failure, per-job configurable.
+  completion and/or failure, per-job configurable. Up to 10 additional
+  recipient email addresses can be configured per job to CC on the same
+  notification.
 - Job output can also be delivered as a formatted **PDF report** (email
   attachment or on-demand download) — see §2.5.
 - **Outbound webhook delivery**: a job can optionally be configured to

@@ -81,7 +81,8 @@ export async function sendRunNotificationEmail(
       bodyLines.push("", "Output:", run.output);
     }
 
-    await sendEmail(config, job.createdBy.email, subject, bodyLines.join("\n"), attachments);
+    const recipients = [job.createdBy.email, ...job.ccRecipients].join(", ");
+    await sendEmail(config, recipients, subject, bodyLines.join("\n"), attachments);
 
     await recordAuditEvent({
       actorType: "SERVICE",

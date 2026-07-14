@@ -32,6 +32,8 @@ export const setJobNotificationsSchema = z.object({
   notifyOnSuccess: z.boolean(),
   notifyOnFailure: z.boolean(),
   attachPdfToEmail: z.boolean(),
+  // Extra recipients alongside the Job owner (§58) — capped at 10.
+  ccRecipients: z.array(z.string().email()).max(10),
 });
 export type SetJobNotificationsInput = z.infer<typeof setJobNotificationsSchema>;
 
