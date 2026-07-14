@@ -10,6 +10,13 @@ packages, so there's no per-package versioning here (see `scripts/release.mjs`).
 
 ## [Unreleased]
 
+### Added
+
+- Versioning and release tooling: `scripts/release.mjs` (`npm run
+  release`) for lockstep version bumps across every workspace, the Helm
+  chart, and image tags, plus `.github/workflows/release.yml` to build
+  and publish images and cut a GitHub Release on tag push.
+
 ## [0.1.0] - 2026-07-14
 
 ### Added
