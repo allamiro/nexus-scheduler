@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { getTeamAccess, type TeamAccessLevel } from "../access.js";
 import { asyncHandler } from "./asyncHandler.js";
+import { routeParam } from "./routeParam.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -21,7 +22,7 @@ export function requireTeamAccess(minLevel: "MEMBER" | "OWNER") {
       res.status(401).json({ error: "authentication required" });
       return;
     }
-    const teamId = req.params.id;
+    const teamId = routeParam(req, "id");
     if (!teamId) {
       res.status(400).json({ error: "team id missing from route" });
       return;

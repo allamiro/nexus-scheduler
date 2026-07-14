@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
 import { asyncHandler } from "./asyncHandler.js";
+import { routeParam } from "./routeParam.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -24,7 +25,7 @@ export function requirePromptAccess(minLevel: "READ" | "EDIT" | "OWNER") {
       res.status(401).json({ error: "authentication required" });
       return;
     }
-    const promptId = req.params.promptId ?? req.params.id;
+    const promptId = routeParam(req, "promptId") ?? routeParam(req, "id");
     if (!promptId) {
       res.status(400).json({ error: "prompt id missing from route" });
       return;

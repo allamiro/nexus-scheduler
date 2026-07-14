@@ -8,10 +8,20 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 // request hanging with no response ever sent). Every async
 // route/middleware handler in this package is wrapped in this so its
 // errors actually reach errorHandler.ts.
-export function asyncHandler<Req extends Request = Request>(
-  fn: (req: Req, res: Response, next: NextFunction) => Promise<void>,
+//
+// The handler's req is presented with v4-style Record<string, string>
+// params rather than Express 5's ParamsDictionary, whose
+// `string | string[]` values only exist for repeatable params
+// ("/:ids+") — a pattern no route in this package uses. A named
+// ":param" segment is always a plain string at runtime.
+export function asyncHandler(
+  fn: (
+    req: Request<Record<string, string>>,
+    res: Response,
+    next: NextFunction,
+  ) => Promise<void>,
 ): RequestHandler {
   return (req, res, next) => {
-    fn(req as Req, res, next).catch(next);
+    fn(req as Request<Record<string, string>>, res, next).catch(next);
   };
 }

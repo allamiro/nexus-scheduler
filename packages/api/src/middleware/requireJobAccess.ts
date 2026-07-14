@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
 import { asyncHandler } from "./asyncHandler.js";
+import { routeParam } from "./routeParam.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -20,7 +21,7 @@ export function requireJobAccess(minLevel: "READ" | "EDIT" | "OWNER") {
       res.status(401).json({ error: "authentication required" });
       return;
     }
-    const jobId = req.params.jobId ?? req.params.id;
+    const jobId = routeParam(req, "jobId") ?? routeParam(req, "id");
     if (!jobId) {
       res.status(400).json({ error: "job id missing from route" });
       return;

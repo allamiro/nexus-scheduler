@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
 import { asyncHandler } from "./asyncHandler.js";
+import { routeParam } from "./routeParam.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -21,7 +22,7 @@ export function requireScheduleAccess(minLevel: "READ" | "EDIT" | "OWNER") {
       res.status(401).json({ error: "authentication required" });
       return;
     }
-    const scheduleId = req.params.id;
+    const scheduleId = routeParam(req, "id");
     if (!scheduleId) {
       res.status(400).json({ error: "schedule id missing from route" });
       return;

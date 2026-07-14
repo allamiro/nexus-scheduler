@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
 import { asyncHandler } from "./asyncHandler.js";
+import { routeParam } from "./routeParam.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -20,7 +21,7 @@ export function requireProjectAccess(minLevel: "READ" | "EDIT" | "OWNER") {
       res.status(401).json({ error: "authentication required" });
       return;
     }
-    const projectId = req.params.projectId ?? req.params.id;
+    const projectId = routeParam(req, "projectId") ?? routeParam(req, "id");
     if (!projectId) {
       res.status(400).json({ error: "project id missing from route" });
       return;
