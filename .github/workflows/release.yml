@@ -9,6 +9,13 @@ on:
     tags:
       - "v*.*.*"
 
+# Doesn't cancel an in-progress publish on a re-trigger of the same tag —
+# half-pushed images/chart under one version tag is worse than a slightly
+# delayed second run.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write
@@ -54,12 +61,49 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  github-release:
-    name: Create GitHub Release
+  package-chart:
+    name: Package & push Helm chart
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Derive version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.16.2
+
+      - name: helm package
+        # Chart.yaml's version/appVersion were already stamped to this
+        # release's version by scripts/release.mjs before the tag was cut
+        # (same as the image tags above) — packaging just picks that up,
+        # no --version override needed here.
+        run: helm package helm/nexus-scheduler --destination .
+
+      - name: helm push (OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+          helm push "nexus-scheduler-${{ steps.version.outputs.version }}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: nexus-scheduler-*.tgz
+          retention-days: 1
+
+  github-release:
+    name: Create GitHub Release
+    needs: [build-and-push, package-chart]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: helm-chart
 
       - name: Extract this version's CHANGELOG section
         run: |
@@ -78,3 +122,4 @@ jobs:
           name: ${{ github.ref_name }}
           body_path: release-notes.md
           generate_release_notes: false
+          files: nexus-scheduler-*.tgz
