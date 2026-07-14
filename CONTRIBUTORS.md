@@ -9,9 +9,15 @@ this Project pursuant to the terms described in [LICENSE](LICENSE) and
 
 ## Signed-off-by
 
+- Copyright 2026 Corey Schue <schuecl@gmail.com>
 - Copyright 2026 Tamir Suliman <allamiro@gmail.com>
 - _Add the copyright date, your name, and email address here._
   _(PLEASE KEEP THIS LINE)_
+
+Automated accounts that appear in the commit history (for example,
+`dependabot[bot]` and AI coding tools operated by the maintainers) act
+on behalf of the maintainers and are not separate signatories to the
+DCO.
 
 ## Note for U.S. Federal Employees
 

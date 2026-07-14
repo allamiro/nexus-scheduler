@@ -288,7 +288,8 @@ for how to get set up, run the checks CI runs, and submit a pull
 request. Contributions are accepted under the
 [Developer Certificate of Origin](https://developercertificate.org/);
 first-time contributors sign off once in
-[CONTRIBUTORS.md](./CONTRIBUTORS.md).
+[CONTRIBUTORS.md](./CONTRIBUTORS.md). All project spaces are governed
+by our [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## Security
 

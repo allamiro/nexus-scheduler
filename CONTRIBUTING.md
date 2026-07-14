@@ -3,6 +3,9 @@
 Thanks for thinking about using or contributing to this software
 ("Project") and its documentation!
 
+By participating in this Project you agree to abide by our
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
 - [Policy & Legal Info](#policy)
 - [Getting Started](#getting-started)
 - [Submitting an Issue](#submitting-an-issue)
