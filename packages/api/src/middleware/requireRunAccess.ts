@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
 import { asyncHandler } from "./asyncHandler.js";
+import { routeParam } from "./routeParam.js";
 
 const RANK: Record<Exclude<ProjectAccessLevel, null>, number> = { READ: 1, EDIT: 2, OWNER: 3 };
 
@@ -16,7 +17,7 @@ export function requireRunAccess(minLevel: "READ" | "EDIT" | "OWNER") {
       res.status(401).json({ error: "authentication required" });
       return;
     }
-    const runId = req.params.id;
+    const runId = routeParam(req, "id");
     if (!runId) {
       res.status(400).json({ error: "run id missing from route" });
       return;
