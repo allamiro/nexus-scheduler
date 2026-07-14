@@ -10,6 +10,8 @@ packages, so there's no per-package versioning here (see `scripts/release.mjs`).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-14
+
 ### Added
 
 - The Helm chart is now packaged and published as an OCI artifact
