@@ -48,19 +48,10 @@ export default tseslint.config(
       "security/detect-child-process": "error",
     },
   },
-  {
-    // Narrow, deliberate exception: Express route/app registration files.
-    // Async route handlers are idiomatic and handled by this project's error
-    // path, so allow promise-returning callbacks as arguments HERE only —
-    // rather than disabling the check everywhere, which would also hide risky
-    // async callbacks (setInterval, emitters) in the rest of the code.
-    files: [
-      "packages/api/src/routes/**/*.ts",
-      "packages/api/src/app.ts",
-      "packages/pdf-service/src/app.ts",
-    ],
-    rules: {
-      "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: { arguments: false } }],
-    },
-  },
+  // No exception for Express route/app files anymore (issue #54): every
+  // async route/middleware handler in api and pdf-service goes through an
+  // asyncHandler() wrapper (a sync function that forwards rejections to
+  // next()), so no-misused-promises holds at full strength there too — a
+  // bare `async (req, res) => ...` passed straight to Express is now a
+  // lint error rather than a silent unhandled-rejection risk.
 );
