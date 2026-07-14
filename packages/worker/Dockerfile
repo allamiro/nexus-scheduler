@@ -22,9 +22,11 @@ COPY packages/frontend/package.json packages/frontend/package.json
 RUN npm ci
 
 COPY packages/shared packages/shared
+COPY packages/pdf packages/pdf
 COPY packages/worker packages/worker
 RUN npm run prisma:generate --workspace=packages/shared
 RUN npm run build --workspace=packages/shared
+RUN npm run build --workspace=packages/pdf
 RUN npm run build --workspace=packages/worker
 
 FROM node:20-slim AS runtime
@@ -41,6 +43,15 @@ COPY --from=build /app/package.json package.json
 COPY --from=build /app/packages/shared/package.json packages/shared/package.json
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/shared/prisma packages/shared/prisma
+COPY --from=build /app/packages/pdf/package.json packages/pdf/package.json
+COPY --from=build /app/packages/pdf/dist packages/pdf/dist
+# renderNotificationTemplate's Markdown rendering (§61) pulls in
+# @nexus-scheduler/pdf's index.ts, which re-exports renderer.ts —
+# importing `playwright` even though the worker never launches a
+# browser. Same node_modules-not-hoisted situation as packages/pdf-
+# service/Dockerfile; copied here purely to satisfy that import, not
+# because the worker renders PDFs itself.
+COPY --from=build /app/packages/pdf/node_modules packages/pdf/node_modules
 COPY --from=build /app/packages/worker/package.json packages/worker/package.json
 COPY --from=build /app/packages/worker/dist packages/worker/dist
 
