@@ -281,6 +281,15 @@ production-hardening items — e.g. swapping placeholder base container
 images for a hardened equivalent, and a full `helm lint`/`helm install`
 pass in a real cluster — are tracked as follow-ups rather than done.
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md)
+for how to get set up, run the checks CI runs, and submit a pull
+request. Contributions are accepted under the
+[Developer Certificate of Origin](https://developercertificate.org/);
+first-time contributors sign off once in
+[CONTRIBUTORS.md](./CONTRIBUTORS.md).
+
 ## Security
 
 To report a vulnerability, please follow the process in
@@ -290,3 +299,5 @@ reporting rather than a public issue.
 ## License
 
 Licensed under the Apache License, Version 2.0 — see [LICENSE](./LICENSE).
+The intent behind this project's open-source release is described in
+[INTENT.md](./INTENT.md).
