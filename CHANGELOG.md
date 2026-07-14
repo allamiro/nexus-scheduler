@@ -10,6 +10,8 @@ packages, so there's no per-package versioning here (see `scripts/release.mjs`).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-14
+
 ### Added
 
 - Versioning and release tooling: `scripts/release.mjs` (`npm run
