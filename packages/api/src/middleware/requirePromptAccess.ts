@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
+import { asyncHandler } from "./asyncHandler.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -17,7 +18,7 @@ const RANK: Record<Exclude<ProjectAccessLevel, null>, number> = { READ: 1, EDIT:
 // same getProjectAccess() used by requireProjectAccess so the two never
 // disagree about who can see what.
 export function requirePromptAccess(minLevel: "READ" | "EDIT" | "OWNER") {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     const user = req.session.user;
     if (!user) {
       res.status(401).json({ error: "authentication required" });
@@ -48,5 +49,5 @@ export function requirePromptAccess(minLevel: "READ" | "EDIT" | "OWNER") {
     req.projectAccess = effective;
     req.promptProjectId = prompt.projectId;
     next();
-  };
+  });
 }

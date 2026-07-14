@@ -253,12 +253,14 @@ function TeamDetailPanel({ team, onDeleted }: { team: TeamDetail; onDeleted: () 
               color="error"
               startIcon={<DeleteIcon fontSize="small" />}
               disabled={deleteTeam.isPending}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: "Delete team?",
-                  message: `Delete "${team.name}"? This can't be undone.`,
-                });
-                if (ok) deleteTeam.mutate();
+              onClick={() => {
+                void (async () => {
+                  const ok = await confirm({
+                    title: "Delete team?",
+                    message: `Delete "${team.name}"? This can't be undone.`,
+                  });
+                  if (ok) deleteTeam.mutate();
+                })();
               }}
             >
               Delete

@@ -8,7 +8,7 @@ import { prisma } from "./db.js";
 import type { Logger } from "./logger.js";
 import { createMetrics, type Metrics } from "./metrics.js";
 import { createRunProcessor } from "./processor.js";
-import { createRunsQueue, RUNS_QUEUE_NAME, type RunJobData } from "./queue.js";
+import { createRunsQueue, type RunJobData } from "./queue.js";
 import { parseRedisConnectionOptions } from "./redisConnection.js";
 
 // Real Redis + real Postgres + a real in-process HTTP server standing in

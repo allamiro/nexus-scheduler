@@ -8,6 +8,7 @@ import { requireRunAccess } from "../middleware/requireRunAccess.js";
 import { recordAuditEvent } from "../audit.js";
 import { getPublicAppSettings } from "./settings.js";
 import type { AppConfig } from "../config.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 // Mounted at /api/jobs/:jobId/runs (mergeParams) — same access convention
 // as Schedules: READ to view history, EDIT to trigger a manual run
@@ -15,19 +16,19 @@ import type { AppConfig } from "../config.js";
 export function createJobRunsRouter(queue: Queue<RunJobData>): Router {
   const router = Router({ mergeParams: true });
 
-  router.get("/", requireAuth, requireJobAccess("READ"), async (req, res) => {
+  router.get("/", requireAuth, requireJobAccess("READ"), asyncHandler(async (req, res) => {
     const runs = await prisma.run.findMany({
       where: { jobId: req.params.jobId },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
     res.json(runs);
-  });
+  }));
 
   // "Run Now" (§2.1): creates a Run immediately, outside any Schedule,
   // and enqueues it with the same retry/backoff policy the scheduler
   // itself uses for a scheduled fire.
-  router.post("/", requireAuth, requireJobAccess("EDIT"), async (req, res) => {
+  router.post("/", requireAuth, requireJobAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const job = await prisma.job.findUnique({ where: { id: req.params.jobId } });
     if (!job) {
@@ -63,7 +64,7 @@ export function createJobRunsRouter(queue: Queue<RunJobData>): Router {
     });
 
     res.status(201).json(run);
-  });
+  }));
 
   return router;
 }
@@ -73,16 +74,16 @@ export function createJobRunsRouter(queue: Queue<RunJobData>): Router {
 export function createRunsRouter(config: AppConfig): Router {
   const router = Router();
 
-  router.get("/:id", requireAuth, requireRunAccess("READ"), async (req, res) => {
+  router.get("/:id", requireAuth, requireRunAccess("READ"), asyncHandler(async (req, res) => {
     const run = await prisma.run.findUnique({ where: { id: req.params.id } });
     res.json(run);
-  });
+  }));
 
   // On-demand PDF download (§2.5) — rendered fresh from already-persisted
   // data, never stored as a binary. Carries the same branding and
   // system-wide classification banner as the web UI, plus the source
   // Project's classification label (if any) as a secondary marking.
-  router.get("/:id/pdf", requireAuth, requireRunAccess("READ"), async (req, res) => {
+  router.get("/:id/pdf", requireAuth, requireRunAccess("READ"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const run = await prisma.run.findUnique({
       where: { id: req.params.id },
@@ -145,7 +146,7 @@ export function createRunsRouter(config: AppConfig): Router {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="run-${run.id}.pdf"`);
     res.send(pdf);
-  });
+  }));
 
   return router;
 }

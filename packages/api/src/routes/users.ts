@@ -7,6 +7,7 @@ import { recordAuditEvent } from "../audit.js";
 import { issuePasswordResetEmail } from "../passwordReset.js";
 import type { AppConfig } from "../config.js";
 import type { Logger } from "../logger.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 const BCRYPT_ROUNDS = 12; // matches auth.ts's local-login/reset-password hashing cost
 
@@ -16,7 +17,7 @@ const BCRYPT_ROUNDS = 12; // matches auth.ts's local-login/reset-password hashin
 export function createUsersRouter(config: AppConfig, logger: Logger): Router {
   const router = Router();
 
-  router.get("/", requireAuth, async (req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (req, res) => {
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
     const isAdmin = req.session.user!.role === "ADMIN";
     const users = await prisma.user.findMany({
@@ -36,9 +37,9 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
       orderBy: { email: "asc" },
     });
     res.json(users);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireAdmin, async (req, res) => {
+  router.patch("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const parsed = updateUserSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -94,13 +95,13 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
     });
 
     res.json(user);
-  });
+  }));
 
   // Provisions a local account with no password set yet (§4) — the
   // account holder sets one via the same reset-password link this
   // immediately triggers, so there's never a temp password to
   // communicate out of band.
-  router.post("/", requireAuth, requireAdmin, async (req, res) => {
+  router.post("/", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     if (!config.LOCAL_AUTH_ENABLED) {
       res.status(503).json({ error: "local accounts are disabled on this deployment" });
       return;
@@ -144,7 +145,7 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
     });
 
     res.status(201).json({ id: user.id, email: user.email, displayName: user.displayName, role: user.role });
-  });
+  }));
 
   // Hard delete — blocked (409) if the user owns/created anything a
   // foreign key still points at (Projects, Jobs, Schedules, Prompt
@@ -156,7 +157,7 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
   // (§7) still needs actorId/actorEmail to mean something even after the
   // account is gone, which is exactly why AuditEvent doesn't have a real
   // FK to User in the first place.
-  router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
+  router.delete("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const admin = req.session.user!;
 
     if (req.params.id === admin.id) {
@@ -211,9 +212,9 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
-  router.post("/:id/send-password-reset", requireAuth, requireAdmin, async (req, res) => {
+  router.post("/:id/send-password-reset", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const admin = req.session.user!;
     const user = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!user || user.authSource !== "LOCAL") {
@@ -237,7 +238,7 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   // Sets a local account's password directly, in-band — the complement
   // to send-password-reset's emailed link, for when SMTP isn't
@@ -245,7 +246,7 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
   // admin just wants to hand the user a working password right now
   // rather than waiting on email delivery. Clears any pending reset
   // token so a stale emailed link can't still be used afterward.
-  router.post("/:id/set-password", requireAuth, requireAdmin, async (req, res) => {
+  router.post("/:id/set-password", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const parsed = adminSetPasswordSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -278,7 +279,7 @@ export function createUsersRouter(config: AppConfig, logger: Logger): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   return router;
 }

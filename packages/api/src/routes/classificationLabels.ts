@@ -5,6 +5,7 @@ import { cssColorSchema } from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 function isNotFoundError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025";
@@ -70,12 +71,12 @@ const updateLabelSchema = createLabelSchema.partial();
 export function createClassificationLabelsRouter(): Router {
   const router = Router();
 
-  router.get("/", requireAuth, async (_req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (_req, res) => {
     const labels = await prisma.classificationLabel.findMany({ orderBy: { sortOrder: "asc" } });
     res.json(labels);
-  });
+  }));
 
-  router.post("/", requireAuth, requireAdmin, async (req, res, next) => {
+  router.post("/", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const parsed = createLabelSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -115,9 +116,9 @@ export function createClassificationLabelsRouter(): Router {
     });
 
     res.status(201).json(label);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  router.patch("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const parsed = updateLabelSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -168,14 +169,14 @@ export function createClassificationLabelsRouter(): Router {
     });
 
     res.json(label);
-  });
+  }));
 
   // Hard delete, but only when nothing currently carries this label —
   // silently reassigning a Project's classification marking to nothing
   // is exactly the kind of thing REQUIREMENTS §6 is careful to avoid.
   // Retiring a label that's still in use means editing it (e.g. its
   // text/color) or reassigning the Projects that use it first.
-  router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
+  router.delete("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const label = await prisma.classificationLabel.findUnique({ where: { id: req.params.id } });
     if (!label) {
@@ -207,7 +208,7 @@ export function createClassificationLabelsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   return router;
 }

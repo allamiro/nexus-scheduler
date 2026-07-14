@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { getTeamAccess, type TeamAccessLevel } from "../access.js";
+import { asyncHandler } from "./asyncHandler.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -14,7 +15,7 @@ const RANK: Record<Exclude<TeamAccessLevel, null>, number> = { MEMBER: 1, OWNER:
 // consistent with "users should only see Teams they belong to." Expects
 // the Team id at req.params.id.
 export function requireTeamAccess(minLevel: "MEMBER" | "OWNER") {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     const user = req.session.user;
     if (!user) {
       res.status(401).json({ error: "authentication required" });
@@ -38,5 +39,5 @@ export function requireTeamAccess(minLevel: "MEMBER" | "OWNER") {
     }
     req.teamAccess = effective;
     next();
-  };
+  });
 }

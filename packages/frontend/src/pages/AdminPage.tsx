@@ -281,14 +281,16 @@ function WebhookDestinationsPanel() {
                   size="small"
                   startIcon={<AutorenewIcon fontSize="small" />}
                   disabled={rotateSecret.isPending}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: "Rotate signing secret?",
-                      message: `The current secret for "${destination.name}" stops validating signatures immediately — any receiver verifying them will need the new one.`,
-                      confirmLabel: "Rotate",
-                      icon: <AutorenewIcon />,
-                    });
-                    if (ok) rotateSecret.mutate(destination.id);
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: "Rotate signing secret?",
+                        message: `The current secret for "${destination.name}" stops validating signatures immediately — any receiver verifying them will need the new one.`,
+                        confirmLabel: "Rotate",
+                        icon: <AutorenewIcon />,
+                      });
+                      if (ok) rotateSecret.mutate(destination.id);
+                    })();
                   }}
                 >
                   Rotate Secret
@@ -322,12 +324,14 @@ function WebhookDestinationsPanel() {
                   color="error"
                   startIcon={<DeleteIcon fontSize="small" />}
                   disabled={deleteDestination.isPending}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: "Delete webhook destination?",
-                      message: `Delete "${destination.name}"? Any Job currently sending results to it will stop. This can't be undone.`,
-                    });
-                    if (ok) deleteDestination.mutate(destination.id);
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: "Delete webhook destination?",
+                        message: `Delete "${destination.name}"? Any Job currently sending results to it will stop. This can't be undone.`,
+                      });
+                      if (ok) deleteDestination.mutate(destination.id);
+                    })();
                   }}
                 >
                   Delete
@@ -812,14 +816,16 @@ function SystemSettingsPanel() {
                   type="file"
                   hidden
                   accept=".pem,.crt,.cer,.ca,application/x-pem-file,application/x-x509-ca-cert,text/plain"
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const file = e.target.files?.[0];
                     // Reset the input so re-selecting the same file still fires onChange.
                     e.target.value = "";
                     if (!file) return;
-                    const text = await file.text();
-                    setSyslogTlsCaCert(text);
-                    setSyslogTlsCaCertName(file.name);
+                    void (async () => {
+                      const text = await file.text();
+                      setSyslogTlsCaCert(text);
+                      setSyslogTlsCaCertName(file.name);
+                    })();
                   }}
                 />
               </Button>
@@ -990,7 +996,7 @@ function UsageReportPanel() {
   });
 
   const stats = statsQuery.data;
-  const total = stats ? Object.values(stats.runCounts).reduce((sum, n) => sum + (n ?? 0), 0) : 0;
+  const total = stats ? Object.values(stats.runCounts).reduce((sum, n) => sum + n, 0) : 0;
   const successRate = stats && total > 0 ? Math.round(((stats.runCounts.SUCCESS ?? 0) / total) * 100) : null;
 
   return (
@@ -1247,12 +1253,14 @@ function UserManagementPanel() {
                 sx={{ ml: 2 }}
                 startIcon={<DeleteIcon fontSize="small" />}
                 disabled={isSelf || deleteUser.isPending}
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: "Delete user?",
-                    message: `Delete "${u.displayName ?? u.email}"? This can't be undone.`,
-                  });
-                  if (ok) deleteUser.mutate(u.id);
+                onClick={() => {
+                  void (async () => {
+                    const ok = await confirm({
+                      title: "Delete user?",
+                      message: `Delete "${u.displayName ?? u.email}"? This can't be undone.`,
+                    });
+                    if (ok) deleteUser.mutate(u.id);
+                  })();
                 }}
               >
                 Delete
@@ -1509,12 +1517,14 @@ function CostRatesPanel() {
                   color="error"
                   startIcon={<DeleteIcon fontSize="small" />}
                   disabled={deleteRate.isPending}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: "Delete cost rate?",
-                      message: `Delete the rate for ${rate.agentId ?? "the global default"} effective ${rate.effectiveFrom}? This can't be undone.`,
-                    });
-                    if (ok) deleteRate.mutate(rate.id);
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: "Delete cost rate?",
+                        message: `Delete the rate for ${rate.agentId ?? "the global default"} effective ${rate.effectiveFrom}? This can't be undone.`,
+                      });
+                      if (ok) deleteRate.mutate(rate.id);
+                    })();
                   }}
                 >
                   Delete
@@ -1717,7 +1727,7 @@ function ClassificationLabelsPanel() {
       void invalidate();
       setDeleteError(null);
     },
-    onError: async (err: unknown) => {
+    onError: (err: unknown) => {
       // apiFetch throws a bare Error on non-2xx; the API's actual 409
       // message (Project count still tagged with this label) is more
       // useful than a generic "request failed."
@@ -1775,12 +1785,14 @@ function ClassificationLabelsPanel() {
                   color="error"
                   startIcon={<DeleteIcon fontSize="small" />}
                   disabled={deleteLabel.isPending}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: "Delete classification label?",
-                      message: `Delete "${label.text}"? Projects currently tagged with it will lose that label. This can't be undone.`,
-                    });
-                    if (ok) deleteLabel.mutate(label.id);
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: "Delete classification label?",
+                        message: `Delete "${label.text}"? Projects currently tagged with it will lose that label. This can't be undone.`,
+                      });
+                      if (ok) deleteLabel.mutate(label.id);
+                    })();
                   }}
                 >
                   Delete

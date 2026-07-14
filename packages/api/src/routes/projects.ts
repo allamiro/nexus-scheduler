@@ -11,6 +11,7 @@ import { requireAuth, requireEditor } from "../middleware/requireAuth.js";
 import { requireProjectAccess } from "../middleware/requireProjectAccess.js";
 import { listAccessibleProjects } from "../access.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 // Resolves a project ACL's grantee to a human-readable audit subject
 // (§41) — update/revoke only have the raw granteeUserId/granteeTeamId
@@ -42,20 +43,20 @@ async function resolveAclGrantee(acl: {
 export function createProjectsRouter(): Router {
   const router = Router();
 
-  router.get("/", requireAuth, async (req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (req, res) => {
     const projects = await listAccessibleProjects(req.session.user!.id);
     res.json(projects);
-  });
+  }));
 
-  router.get("/:id", requireAuth, requireProjectAccess("READ"), async (req, res) => {
+  router.get("/:id", requireAuth, requireProjectAccess("READ"), asyncHandler(async (req, res) => {
     const project = await prisma.project.findUnique({
       where: { id: req.params.id },
       include: { classificationLabel: true, owner: { select: { id: true, email: true, displayName: true } } },
     });
     res.json({ ...project, effectiveAccess: req.projectAccess });
-  });
+  }));
 
-  router.post("/", requireAuth, requireEditor, async (req, res) => {
+  router.post("/", requireAuth, requireEditor, asyncHandler(async (req, res) => {
     const parsed = createProjectSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -92,9 +93,9 @@ export function createProjectsRouter(): Router {
     });
 
     res.status(201).json(project);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireProjectAccess("EDIT"), async (req, res) => {
+  router.patch("/:id", requireAuth, requireProjectAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = updateProjectSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -120,9 +121,9 @@ export function createProjectsRouter(): Router {
     });
 
     res.json(project);
-  });
+  }));
 
-  router.delete("/:id", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {
+  router.delete("/:id", requireAuth, requireProjectAccess("OWNER"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const project = await prisma.project.delete({ where: { id: req.params.id } });
 
@@ -140,7 +141,7 @@ export function createProjectsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   // Deliberately a separate, OWNER-gated action from PATCH /:id (which
   // only needs EDIT) — see transferProjectOwnershipSchema's comment for
@@ -148,7 +149,7 @@ export function createProjectsRouter(): Router {
   // Doesn't touch ACLs: the previous owner keeps whatever access (if
   // any) they already had via an ACL grant, same as REQUIREMENTS'
   // existing sharing model — this is a handoff, not an automatic grant.
-  router.post("/:id/transfer-ownership", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {
+  router.post("/:id/transfer-ownership", requireAuth, requireProjectAccess("OWNER"), asyncHandler(async (req, res) => {
     const parsed = transferProjectOwnershipSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -192,14 +193,14 @@ export function createProjectsRouter(): Router {
     });
 
     res.json(project);
-  });
+  }));
 
-  router.get("/:id/acl", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {
+  router.get("/:id/acl", requireAuth, requireProjectAccess("OWNER"), asyncHandler(async (req, res) => {
     const acls = await prisma.projectAcl.findMany({ where: { projectId: req.params.id } });
     res.json(acls);
-  });
+  }));
 
-  router.post("/:id/acl", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {
+  router.post("/:id/acl", requireAuth, requireProjectAccess("OWNER"), asyncHandler(async (req, res) => {
     const parsed = grantProjectAclSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -257,9 +258,9 @@ export function createProjectsRouter(): Router {
     });
 
     res.status(201).json(acl);
-  });
+  }));
 
-  router.patch("/:id/acl/:aclId", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {
+  router.patch("/:id/acl/:aclId", requireAuth, requireProjectAccess("OWNER"), asyncHandler(async (req, res) => {
     const parsed = updateProjectAclSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -298,9 +299,9 @@ export function createProjectsRouter(): Router {
     });
 
     res.json(acl);
-  });
+  }));
 
-  router.delete("/:id/acl/:aclId", requireAuth, requireProjectAccess("OWNER"), async (req, res) => {
+  router.delete("/:id/acl/:aclId", requireAuth, requireProjectAccess("OWNER"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const acl = await prisma.projectAcl.delete({ where: { id: req.params.aclId } });
 
@@ -331,7 +332,7 @@ export function createProjectsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   return router;
 }

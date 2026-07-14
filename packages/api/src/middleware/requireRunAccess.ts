@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
+import { asyncHandler } from "./asyncHandler.js";
 
 const RANK: Record<Exclude<ProjectAccessLevel, null>, number> = { READ: 1, EDIT: 2, OWNER: 3 };
 
@@ -9,7 +10,7 @@ const RANK: Record<Exclude<ProjectAccessLevel, null>, number> = { READ: 1, EDIT:
 // read-only from the API's perspective (created via schedule fire or
 // run-now), so this is only ever used with minLevel "READ".
 export function requireRunAccess(minLevel: "READ" | "EDIT" | "OWNER") {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     const user = req.session.user;
     if (!user) {
       res.status(401).json({ error: "authentication required" });
@@ -39,5 +40,5 @@ export function requireRunAccess(minLevel: "READ" | "EDIT" | "OWNER") {
     }
     req.projectAccess = effective;
     next();
-  };
+  });
 }

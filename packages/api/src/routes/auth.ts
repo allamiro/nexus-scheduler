@@ -9,6 +9,7 @@ import { prisma } from "../db.js";
 import { recordAuditEvent } from "../audit.js";
 import { issuePasswordResetEmail } from "../passwordReset.js";
 import { regenerateSession } from "../auth/session.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 const BCRYPT_ROUNDS = 12;
 // A precomputed hash of a value nobody will ever type, used to keep
@@ -59,7 +60,7 @@ function sanitizeReturnTo(value: unknown): string | undefined {
 export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   const router = Router();
 
-  router.get("/login", async (req, res) => {
+  router.get("/login", asyncHandler(async (req, res) => {
     // Retries discovery here (rather than only trusting the one-shot
     // startup attempt) so SSO comes up on its own once the Keycloak
     // realm/client actually exists, no API restart required.
@@ -83,9 +84,9 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       code_challenge_method: "S256",
     });
     res.redirect(authUrl);
-  });
+  }));
 
-  router.get("/callback", loginRateLimiter, async (req, res) => {
+  router.get("/callback", loginRateLimiter, asyncHandler(async (req, res) => {
     const pending = req.session.oidc;
     if (!pending) {
       res.status(400).json({ error: "no pending OIDC login in this session" });
@@ -183,9 +184,9 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       });
       res.status(401).json({ error: "authentication failed" });
     }
-  });
+  }));
 
-  router.post("/logout", async (req, res) => {
+  router.post("/logout", asyncHandler(async (req, res) => {
     const user = req.session.user;
     req.session.destroy((err) => {
       if (err) {
@@ -206,7 +207,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       });
     }
     res.status(204).send();
-  });
+  }));
 
   router.get("/me", (req, res) => {
     if (!req.session.user) {
@@ -221,7 +222,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   // whole point is not depending on Keycloak — or an admin's own config
   // toggle — being available. Ordinary local accounts are blocked when
   // the flag is off.
-  router.post("/local-login", loginRateLimiter, async (req, res) => {
+  router.post("/local-login", loginRateLimiter, asyncHandler(async (req, res) => {
     const parsed = localLoginSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -276,14 +277,14 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
     });
 
     res.json(req.session.user);
-  });
+  }));
 
   // Deliberately identical response whether or not the email exists —
   // standard practice against account enumeration via this endpoint.
   // Gated by LOCAL_AUTH_ENABLED: the built-in admin's password is always
   // controlled by BOOTSTRAP_ADMIN_PASSWORD, never self-reset, so there's
   // no legitimate use of this path when ordinary local accounts are off.
-  router.post("/local/forgot-password", passwordResetRateLimiter, async (req, res) => {
+  router.post("/local/forgot-password", passwordResetRateLimiter, asyncHandler(async (req, res) => {
     if (!config.LOCAL_AUTH_ENABLED) {
       res.status(503).json({ error: "local accounts are disabled on this deployment" });
       return;
@@ -300,9 +301,9 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
     }
 
     res.status(204).send();
-  });
+  }));
 
-  router.post("/local/reset-password", passwordResetRateLimiter, async (req, res) => {
+  router.post("/local/reset-password", passwordResetRateLimiter, asyncHandler(async (req, res) => {
     if (!config.LOCAL_AUTH_ENABLED) {
       res.status(503).json({ error: "local accounts are disabled on this deployment" });
       return;
@@ -341,7 +342,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   // Records that a not-yet-authenticated visitor clicked "Accept" on the
   // login-screen consent banner (§40) — no identity exists yet at this
@@ -349,7 +350,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
   // login attempt above. Rejecting the banner is a client-side-only
   // redirect (ConsentDeclinedPage) and isn't audited — there's no account
   // action to record, just a visitor who didn't proceed.
-  router.post("/consent-accept", consentAcceptRateLimiter, async (req, res) => {
+  router.post("/consent-accept", consentAcceptRateLimiter, asyncHandler(async (req, res) => {
     await recordAuditEvent({
       req,
       actorType: "USER",
@@ -361,7 +362,7 @@ export function createAuthRouter(config: AppConfig, logger: Logger): Router {
       result: "SUCCESS",
     });
     res.status(204).send();
-  });
+  }));
 
   return router;
 }

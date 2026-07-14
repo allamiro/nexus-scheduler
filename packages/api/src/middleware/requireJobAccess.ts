@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { getProjectAccess, type ProjectAccessLevel } from "../access.js";
+import { asyncHandler } from "./asyncHandler.js";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -13,7 +14,7 @@ const RANK: Record<Exclude<ProjectAccessLevel, null>, number> = { READ: 1, EDIT:
 // Jobs, like Prompts, carry no ACLs of their own — access is entirely
 // inherited from their Project (REQUIREMENTS.md §2.3).
 export function requireJobAccess(minLevel: "READ" | "EDIT" | "OWNER") {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     const user = req.session.user;
     if (!user) {
       res.status(401).json({ error: "authentication required" });
@@ -41,5 +42,5 @@ export function requireJobAccess(minLevel: "READ" | "EDIT" | "OWNER") {
     req.projectAccess = effective;
     req.jobProjectId = job.projectId;
     next();
-  };
+  });
 }

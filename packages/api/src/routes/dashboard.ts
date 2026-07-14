@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 import { getAccessibleProjectIds } from "../access.js";
 
 // Aggregate view for the landing page (REQUIREMENTS §8: "Run counts,
@@ -10,7 +11,7 @@ import { getAccessibleProjectIds } from "../access.js";
 export function createDashboardRouter(): Router {
   const router = Router();
 
-  router.get("/", requireAuth, async (req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (req, res) => {
     const projectIds = await getAccessibleProjectIds(req.session.user!.id);
 
     if (projectIds.length === 0) {
@@ -50,7 +51,7 @@ export function createDashboardRouter(): Router {
       recentRuns,
       upcomingSchedules,
     });
-  });
+  }));
 
   return router;
 }

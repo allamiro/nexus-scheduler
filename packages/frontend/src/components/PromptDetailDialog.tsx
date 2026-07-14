@@ -168,12 +168,14 @@ export function PromptDetailDialog({ promptId, onClose }: { promptId: string; on
                     color="error"
                     startIcon={<DeleteIcon fontSize="small" />}
                     disabled={deletePrompt.isPending}
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: "Delete prompt?",
-                        message: `Delete "${prompt.name}" and all its saved versions? This can't be undone.`,
-                      });
-                      if (ok) deletePrompt.mutate();
+                    onClick={() => {
+                      void (async () => {
+                        const ok = await confirm({
+                          title: "Delete prompt?",
+                          message: `Delete "${prompt.name}" and all its saved versions? This can't be undone.`,
+                        });
+                        if (ok) deletePrompt.mutate();
+                      })();
                     }}
                   >
                     Delete

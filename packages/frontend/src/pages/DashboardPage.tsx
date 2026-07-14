@@ -36,7 +36,7 @@ export function DashboardPage() {
   });
 
   const counts = dashboardQuery.data?.runCounts ?? {};
-  const total = Object.values(counts).reduce((sum, n) => sum + (n ?? 0), 0);
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
   const successRate = total > 0 ? Math.round(((counts.SUCCESS ?? 0) / total) * 100) : null;
 
   return (

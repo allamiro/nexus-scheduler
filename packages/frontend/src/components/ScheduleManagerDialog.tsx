@@ -145,9 +145,8 @@ export function ScheduleManagerDialog({
       return;
     }
     setVariableValues(
-      Object.fromEntries(effectiveVariables.map((v) => [v.name, v.defaultValue ?? ""])),
+      Object.fromEntries(effectiveVariables.map((v) => [v.name, v.defaultValue])),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveVersion?.id]);
 
   const createSchedule = useMutation({
@@ -203,7 +202,7 @@ export function ScheduleManagerDialog({
     skipNextVariableResetRef.current = true;
     setVersionPinMode(schedule.versionPinMode);
     setPinnedPromptVersionId(schedule.pinnedPromptVersionId ?? "");
-    setVariableValues(schedule.variableValues ?? {});
+    setVariableValues(schedule.variableValues);
     setEditingScheduleId(schedule.id);
   };
 
@@ -303,12 +302,14 @@ export function ScheduleManagerDialog({
                       color="error"
                       startIcon={<DeleteIcon fontSize="small" />}
                       disabled={deleteSchedule.isPending}
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: "Delete schedule?",
-                          message: "Delete this schedule? This can't be undone.",
-                        });
-                        if (ok) deleteSchedule.mutate(schedule.id);
+                      onClick={() => {
+                        void (async () => {
+                          const ok = await confirm({
+                            title: "Delete schedule?",
+                            message: "Delete this schedule? This can't be undone.",
+                          });
+                          if (ok) deleteSchedule.mutate(schedule.id);
+                        })();
                       }}
                     >
                       Delete

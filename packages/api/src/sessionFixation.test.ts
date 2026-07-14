@@ -97,7 +97,7 @@ describe("session fixation protection (§12/§45)", () => {
     // (e.g. cookie injection on a shared subdomain).
     const fixedSid = "attacker-fixed-session-id-0123456789";
     await new Promise<void>((resolve, reject) => {
-      store.set(fixedSid, { cookie: {} } as never, (err) => (err ? reject(err) : resolve()));
+      void store.set(fixedSid, { cookie: {} } as never, (err) => (err ? reject(err) : resolve()));
     });
     const signedCookieValue = `s:${sign(fixedSid, config.SESSION_SECRET)}`;
 
@@ -118,7 +118,7 @@ describe("session fixation protection (§12/§45)", () => {
     // superseded — otherwise an attacker who also captured the *new*
     // cookie some other way could still find the old one still "live".
     const oldSessionStillExists = await new Promise<boolean>((resolve, reject) => {
-      store.get(fixedSid, (err, data) => {
+      void store.get(fixedSid, (err, data) => {
         if (err) reject(err);
         else resolve(data != null);
       });

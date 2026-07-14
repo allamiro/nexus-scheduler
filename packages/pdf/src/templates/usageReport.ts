@@ -31,7 +31,7 @@ function statTile(label: string, value: string): string {
 // appears in this report, but everything still goes through
 // escapeHtml() defensively/consistently with the run report template.
 export function buildUsageReportHtml(data: UsageReportData): string {
-  const total = Object.values(data.runCounts).reduce((sum, n) => sum + (n ?? 0), 0);
+  const total = Object.values(data.runCounts).reduce((sum, n) => sum + n, 0);
   const successRate = total > 0 ? Math.round(((data.runCounts.SUCCESS ?? 0) / total) * 100) : null;
 
   const statusRows = (

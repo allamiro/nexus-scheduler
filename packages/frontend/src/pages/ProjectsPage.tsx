@@ -339,12 +339,14 @@ function ProjectDetailPanel({ projectId, onDeleted }: { projectId: string; onDel
               color="error"
               startIcon={<DeleteIcon fontSize="small" />}
               disabled={deleteProject.isPending}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: "Delete project?",
-                  message: `Delete "${project.name}" and everything in it — its prompts, jobs, and schedules? This can't be undone.`,
-                });
-                if (ok) deleteProject.mutate();
+              onClick={() => {
+                void (async () => {
+                  const ok = await confirm({
+                    title: "Delete project?",
+                    message: `Delete "${project.name}" and everything in it — its prompts, jobs, and schedules? This can't be undone.`,
+                  });
+                  if (ok) deleteProject.mutate();
+                })();
               }}
             >
               Delete
@@ -919,12 +921,14 @@ function ProjectJobsPanel({ projectId, canEdit }: { projectId: string; canEdit: 
                       color="error"
                       startIcon={<DeleteIcon fontSize="small" />}
                       disabled={deleteJob.isPending}
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: "Delete job?",
-                          message: `Delete "${job.name}" and its schedules? This can't be undone.`,
-                        });
-                        if (ok) deleteJob.mutate(job.id);
+                      onClick={() => {
+                        void (async () => {
+                          const ok = await confirm({
+                            title: "Delete job?",
+                            message: `Delete "${job.name}" and its schedules? This can't be undone.`,
+                          });
+                          if (ok) deleteJob.mutate(job.id);
+                        })();
                       }}
                     >
                       Delete
@@ -1139,14 +1143,16 @@ function ProjectSharingPanel({ projectId }: { projectId: string }) {
                   color="error"
                   startIcon={<RemoveCircleOutlineIcon fontSize="small" />}
                   disabled={revoke.isPending}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: "Revoke access?",
-                      message: `Revoke ${acl.accessLevel} access for this ${acl.granteeType.toLowerCase()}${acl.granteeType === "ORG" ? " (everyone)" : ""}?`,
-                      confirmLabel: "Revoke",
-                      icon: <RemoveCircleOutlineIcon />,
-                    });
-                    if (ok) revoke.mutate(acl.id);
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await confirm({
+                        title: "Revoke access?",
+                        message: `Revoke ${acl.accessLevel} access for this ${acl.granteeType.toLowerCase()}${acl.granteeType === "ORG" ? " (everyone)" : ""}?`,
+                        confirmLabel: "Revoke",
+                        icon: <RemoveCircleOutlineIcon />,
+                      });
+                      if (ok) revoke.mutate(acl.id);
+                    })();
                   }}
                 >
                   Revoke

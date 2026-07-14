@@ -5,6 +5,7 @@ import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent } from "../audit.js";
 import { getPublicAppSettings } from "./settings.js";
 import type { AppConfig } from "../config.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 type RunStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELLED" | "SKIPPED";
 
@@ -56,13 +57,13 @@ function csvField(value: string): string {
 export function createAdminReportsRouter(config: AppConfig): Router {
   const router = Router();
 
-  router.get("/usage-report", requireAuth, requireAdmin, async (req, res) => {
+  router.get("/usage-report", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const { from, to } = parseDateRange(req.query as Record<string, unknown>);
     const stats = await getUsageStats(from, to);
     res.json({ periodStart: from.toISOString(), periodEnd: to.toISOString(), ...stats });
-  });
+  }));
 
-  router.get("/usage-report/csv", requireAuth, requireAdmin, async (req, res) => {
+  router.get("/usage-report/csv", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const { from, to } = parseDateRange(req.query as Record<string, unknown>);
 
@@ -119,9 +120,9 @@ export function createAdminReportsRouter(config: AppConfig): Router {
       `attachment; filename="usage-report-${from.toISOString().slice(0, 10)}-to-${to.toISOString().slice(0, 10)}.csv"`,
     );
     res.send([header, ...rows].join("\n"));
-  });
+  }));
 
-  router.get("/usage-report/pdf", requireAuth, requireAdmin, async (req, res) => {
+  router.get("/usage-report/pdf", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const { from, to } = parseDateRange(req.query as Record<string, unknown>);
     const stats = await getUsageStats(from, to);
@@ -158,7 +159,7 @@ export function createAdminReportsRouter(config: AppConfig): Router {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "attachment; filename=\"usage-report.pdf\"");
     res.send(pdf);
-  });
+  }));
 
   return router;
 }

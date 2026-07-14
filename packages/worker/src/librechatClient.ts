@@ -126,7 +126,7 @@ export function describeUnexecutedToolCall(
   if (finishReason !== "tool_calls" && hasRealAnswer) {
     return null;
   }
-  const names = message.tool_calls.map((call) => call.function?.name || "unknown").join(", ");
+  const names = message.tool_calls.map((call) => call.function.name || "unknown").join(", ");
   return (
     `[Nexus Scheduler: the agent attempted to call ${message.tool_calls.length} ` +
     `tool(s) (${names}${finishReason ? `, finish_reason=${finishReason}` : ""}) via ` +

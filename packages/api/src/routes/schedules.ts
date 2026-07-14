@@ -6,6 +6,7 @@ import { requireJobAccess } from "../middleware/requireJobAccess.js";
 import { requireScheduleAccess } from "../middleware/requireScheduleAccess.js";
 import { getAccessibleProjectIds, getEligibleApprovers } from "../access.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 // Fields whose change re-triggers approval on an already-approved shared
 // schedule (REQUIREMENTS.md §2.4: "target agent, prompt/prompt version,
@@ -16,12 +17,12 @@ import { recordAuditEvent, diffChangedFields } from "../audit.js";
 // trail (job.update).
 const SUBSTANTIVE_FIELDS = ["runAt", "intervalConfig", "timezone", "versionPinMode", "pinnedPromptVersionId"] as const;
 
-async function resolveNextFireAt(
+function resolveNextFireAt(
   type: "ONE_TIME" | "RECURRING",
   runAt: string | undefined,
   intervalConfig: unknown,
   timezone: string,
-): Promise<Date> {
+): Date {
   if (type === "ONE_TIME") {
     return new Date(runAt!);
   }
@@ -36,15 +37,15 @@ async function resolveNextFireAt(
 export function createJobSchedulesRouter(): Router {
   const router = Router({ mergeParams: true });
 
-  router.get("/", requireAuth, requireJobAccess("READ"), async (req, res) => {
+  router.get("/", requireAuth, requireJobAccess("READ"), asyncHandler(async (req, res) => {
     const schedules = await prisma.schedule.findMany({
       where: { jobId: req.params.jobId },
       orderBy: { createdAt: "desc" },
     });
     res.json(schedules);
-  });
+  }));
 
-  router.post("/", requireAuth, requireJobAccess("EDIT"), async (req, res) => {
+  router.post("/", requireAuth, requireJobAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = createScheduleSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -75,7 +76,7 @@ export function createJobSchedulesRouter(): Router {
 
     const nextFireAt = needsApproval
       ? null
-      : await resolveNextFireAt(parsed.data.type, parsed.data.runAt, parsed.data.intervalConfig, parsed.data.timezone);
+      : resolveNextFireAt(parsed.data.type, parsed.data.runAt, parsed.data.intervalConfig, parsed.data.timezone);
 
     const schedule = await prisma.schedule.create({
       data: {
@@ -108,7 +109,7 @@ export function createJobSchedulesRouter(): Router {
     });
 
     res.status(201).json(schedule);
-  });
+  }));
 
   return router;
 }
@@ -117,7 +118,7 @@ export function createJobSchedulesRouter(): Router {
 export function createSchedulesRouter(): Router {
   const router = Router();
 
-  router.get("/pending-approval", requireAuth, async (req, res) => {
+  router.get("/pending-approval", requireAuth, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const isAdmin = user.role === "ADMIN";
 
@@ -143,14 +144,14 @@ export function createSchedulesRouter(): Router {
       }
     }
     res.json(eligible);
-  });
+  }));
 
-  router.get("/:id", requireAuth, requireScheduleAccess("READ"), async (req, res) => {
+  router.get("/:id", requireAuth, requireScheduleAccess("READ"), asyncHandler(async (req, res) => {
     const schedule = await prisma.schedule.findUnique({ where: { id: req.params.id } });
     res.json(schedule);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireScheduleAccess("EDIT"), async (req, res) => {
+  router.patch("/:id", requireAuth, requireScheduleAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = updateScheduleSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -198,7 +199,7 @@ export function createSchedulesRouter(): Router {
         ...(mustReapprove
           ? { approvalStatus: "PENDING", nextFireAt: null }
           : touchedSubstantive && existing.approvalStatus === "APPROVED"
-            ? { nextFireAt: await resolveNextFireAt(merged.type, merged.runAt, merged.intervalConfig, merged.timezone) }
+            ? { nextFireAt: resolveNextFireAt(merged.type, merged.runAt, merged.intervalConfig, merged.timezone) }
             : {}),
       },
     });
@@ -219,9 +220,9 @@ export function createSchedulesRouter(): Router {
     });
 
     res.json(schedule);
-  });
+  }));
 
-  router.delete("/:id", requireAuth, requireScheduleAccess("EDIT"), async (req, res) => {
+  router.delete("/:id", requireAuth, requireScheduleAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const schedule = await prisma.schedule.delete({ where: { id: req.params.id } });
     const job = await prisma.job.findUnique({ where: { id: schedule.jobId }, select: { name: true } });
@@ -240,9 +241,9 @@ export function createSchedulesRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
-  router.post("/:id/pause", requireAuth, requireScheduleAccess("EDIT"), async (req, res) => {
+  router.post("/:id/pause", requireAuth, requireScheduleAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const schedule = await prisma.schedule.update({ where: { id: req.params.id }, data: { paused: true } });
     const job = await prisma.job.findUnique({ where: { id: schedule.jobId }, select: { name: true } });
@@ -261,9 +262,9 @@ export function createSchedulesRouter(): Router {
     });
 
     res.json(schedule);
-  });
+  }));
 
-  router.post("/:id/resume", requireAuth, requireScheduleAccess("EDIT"), async (req, res) => {
+  router.post("/:id/resume", requireAuth, requireScheduleAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const existing = await prisma.schedule.findUniqueOrThrow({ where: { id: req.params.id } });
 
@@ -273,7 +274,7 @@ export function createSchedulesRouter(): Router {
     // handling (§2.4).
     const nextFireAt =
       existing.approvalStatus === "APPROVED"
-        ? await resolveNextFireAt(
+        ? resolveNextFireAt(
             existing.type,
             existing.runAt?.toISOString(),
             existing.intervalConfig,
@@ -301,9 +302,9 @@ export function createSchedulesRouter(): Router {
     });
 
     res.json(schedule);
-  });
+  }));
 
-  router.post("/:id/approve", requireAuth, requireScheduleAccess("EDIT"), async (req, res) => {
+  router.post("/:id/approve", requireAuth, requireScheduleAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const existing = await prisma.schedule.findUniqueOrThrow({ where: { id: req.params.id } });
 
@@ -324,7 +325,7 @@ export function createSchedulesRouter(): Router {
       }
     }
 
-    const nextFireAt = await resolveNextFireAt(
+    const nextFireAt = resolveNextFireAt(
       existing.type,
       existing.runAt?.toISOString(),
       existing.intervalConfig,
@@ -360,9 +361,9 @@ export function createSchedulesRouter(): Router {
     });
 
     res.json(schedule);
-  });
+  }));
 
-  router.post("/:id/reject", requireAuth, requireScheduleAccess("EDIT"), async (req, res) => {
+  router.post("/:id/reject", requireAuth, requireScheduleAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const existing = await prisma.schedule.findUniqueOrThrow({ where: { id: req.params.id } });
 
@@ -409,7 +410,7 @@ export function createSchedulesRouter(): Router {
     });
 
     res.json(schedule);
-  });
+  }));
 
   return router;
 }

@@ -66,11 +66,34 @@ jobs:
       - name: Push schema to the test database
         run: npm run prisma:push --workspace=packages/shared
 
-      - name: Lint
-        run: npm run lint
-
       - name: Build (compiles + typechecks every package)
         run: npm run build
 
+      - name: Lint
+        run: npm run lint
+
       - name: Test
         run: npm test
+
+  # Runs separately from build-and-test since it needs neither Postgres/
+  # Redis nor a build — just the installed dependency tree. Scoped to
+  # --omit=dev so dev-only tooling vulnerabilities (e.g. in vite/vitest,
+  # never shipped to production) don't block on something this project
+  # can't ship differently; --audit-level=high still catches anything
+  # that matters in a real runtime dependency.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit (production dependencies, high+ severity)
+        run: npm audit --omit=dev --audit-level=high

@@ -6,21 +6,22 @@ import { requireProjectAccess } from "../middleware/requireProjectAccess.js";
 import { requireJobAccess } from "../middleware/requireJobAccess.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
 import { canUseApiKey } from "./apiKeys.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 // Mounted at /api/projects/:projectId/jobs (mergeParams) — same access
 // convention as Prompts: EDIT to create, READ to list (REQUIREMENTS §2.3).
 export function createProjectJobsRouter(): Router {
   const router = Router({ mergeParams: true });
 
-  router.get("/", requireAuth, requireProjectAccess("READ"), async (req, res) => {
+  router.get("/", requireAuth, requireProjectAccess("READ"), asyncHandler(async (req, res) => {
     const jobs = await prisma.job.findMany({
       where: { projectId: req.params.projectId },
       orderBy: { createdAt: "desc" },
     });
     res.json(jobs);
-  });
+  }));
 
-  router.post("/", requireAuth, requireProjectAccess("EDIT"), async (req, res) => {
+  router.post("/", requireAuth, requireProjectAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = createJobSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -65,7 +66,7 @@ export function createProjectJobsRouter(): Router {
     });
 
     res.status(201).json(job);
-  });
+  }));
 
   return router;
 }
@@ -75,12 +76,12 @@ export function createProjectJobsRouter(): Router {
 export function createJobsRouter(): Router {
   const router = Router();
 
-  router.get("/:id", requireAuth, requireJobAccess("READ"), async (req, res) => {
+  router.get("/:id", requireAuth, requireJobAccess("READ"), asyncHandler(async (req, res) => {
     const job = await prisma.job.findUnique({ where: { id: req.params.id } });
     res.json(job);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireJobAccess("EDIT"), async (req, res) => {
+  router.patch("/:id", requireAuth, requireJobAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = updateJobSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -122,9 +123,9 @@ export function createJobsRouter(): Router {
     });
 
     res.json(job);
-  });
+  }));
 
-  router.delete("/:id", requireAuth, requireJobAccess("EDIT"), async (req, res) => {
+  router.delete("/:id", requireAuth, requireJobAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const job = await prisma.job.delete({ where: { id: req.params.id } });
 
@@ -142,20 +143,20 @@ export function createJobsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   // Which admin-allow-listed destinations (§2.2) get this Job's run
   // results — replaces the full set in one call rather than incremental
   // add/remove, which is simpler for what's normally a short list.
-  router.get("/:id/webhooks", requireAuth, requireJobAccess("READ"), async (req, res) => {
+  router.get("/:id/webhooks", requireAuth, requireJobAccess("READ"), asyncHandler(async (req, res) => {
     const links = await prisma.jobWebhookDestination.findMany({
       where: { jobId: req.params.id },
       include: { webhookDestination: { select: { id: true, name: true, url: true, active: true } } },
     });
     res.json(links.map((l) => l.webhookDestination));
-  });
+  }));
 
-  router.put("/:id/webhooks", requireAuth, requireJobAccess("EDIT"), async (req, res) => {
+  router.put("/:id/webhooks", requireAuth, requireJobAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = setJobWebhooksSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -206,12 +207,12 @@ export function createJobsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   // Per-job email notification preferences (§2.2) — sent to the Job
   // owner (createdBy) on completion/failure, independent of the
   // admin-allow-listed webhook delivery above.
-  router.put("/:id/notifications", requireAuth, requireJobAccess("EDIT"), async (req, res) => {
+  router.put("/:id/notifications", requireAuth, requireJobAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = setJobNotificationsSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -237,7 +238,7 @@ export function createJobsRouter(): Router {
     });
 
     res.json(job);
-  });
+  }));
 
   return router;
 }

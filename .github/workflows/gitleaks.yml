@@ -1,0 +1,26 @@
+name: gitleaks
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    container:
+      # Runs the OSS gitleaks CLI directly in its own image rather than
+      # the gitleaks/gitleaks-action marketplace action, which requires a
+      # paid license for use on private repos.
+      image: zricethezav/gitleaks:latest
+      options: --entrypoint ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks scans the diff/history, not just the checked-out
+          # tree — a shallow clone would only see the last commit.
+          fetch-depth: 0
+
+      - name: gitleaks detect
+        run: gitleaks detect --source . --redact -v

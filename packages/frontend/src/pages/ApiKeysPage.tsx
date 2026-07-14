@@ -136,14 +136,16 @@ export function ApiKeysPage() {
                     color="error"
                     startIcon={<BlockIcon fontSize="small" />}
                     disabled={revokeKey.isPending}
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: "Revoke API key?",
-                        message: `Revoke "${key.label ?? "this key"}"? Any Job using it will start failing immediately. This can't be undone.`,
-                        confirmLabel: "Revoke",
-                        icon: <BlockIcon />,
-                      });
-                      if (ok) revokeKey.mutate(key.id);
+                    onClick={() => {
+                      void (async () => {
+                        const ok = await confirm({
+                          title: "Revoke API key?",
+                          message: `Revoke "${key.label ?? "this key"}"? Any Job using it will start failing immediately. This can't be undone.`,
+                          confirmLabel: "Revoke",
+                          icon: <BlockIcon />,
+                        });
+                        if (ok) revokeKey.mutate(key.id);
+                      })();
                     }}
                   >
                     Revoke

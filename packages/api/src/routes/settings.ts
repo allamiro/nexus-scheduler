@@ -7,6 +7,7 @@ import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
 import { sendEmail, SmtpNotConfiguredError } from "../email.js";
 import type { AppConfig } from "../config.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 const SETTINGS_ID = 1; // singleton row, enforced here rather than a real sequence
 
@@ -61,19 +62,19 @@ export function createSettingsRouter(config: AppConfig): Router {
   // independent of login resolving. Never includes SMTP config: that's
   // internal infrastructure detail (host, username, and — even
   // encrypted — password ciphertext) with no business being public.
-  router.get("/", async (_req, res) => {
+  router.get("/", asyncHandler(async (_req, res) => {
     res.json(await getPublicAppSettings());
-  });
+  }));
 
   // Full settings for the admin panel, including SMTP — password
   // presence only (`smtpPasswordSet`), never the ciphertext itself.
-  router.get("/admin", requireAuth, requireAdmin, async (_req, res) => {
+  router.get("/admin", requireAuth, requireAdmin, asyncHandler(async (_req, res) => {
     const settings = await getOrCreateSettings();
     const { smtpEncryptedPassword, ...rest } = settings;
     res.json({ ...rest, smtpPasswordSet: !!smtpEncryptedPassword });
-  });
+  }));
 
-  router.patch("/", requireAuth, requireAdmin, async (req, res) => {
+  router.patch("/", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const parsed = updateAppSettingsSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -129,9 +130,9 @@ export function createSettingsRouter(config: AppConfig): Router {
 
     const { smtpEncryptedPassword, ...publicSettings } = settings;
     res.json({ ...publicSettings, smtpPasswordSet: !!smtpEncryptedPassword });
-  });
+  }));
 
-  router.post("/smtp/test", requireAuth, requireAdmin, async (req, res) => {
+  router.post("/smtp/test", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     try {
       await sendEmail(config, user.email, "Nexus Scheduler test email", "SMTP is configured correctly.");
@@ -143,9 +144,9 @@ export function createSettingsRouter(config: AppConfig): Router {
       }
       res.status(502).json({ error: err instanceof Error ? err.message : "failed to send test email" });
     }
-  });
+  }));
 
-  router.post("/syslog/test", requireAuth, requireAdmin, async (req, res) => {
+  router.post("/syslog/test", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     // Accepts the same fields as updateAppSettingsSchema's syslog* ones,
     // all optional — lets the admin test their in-progress form edits
     // (host/port/transport/tls/caCert) before hitting Save, rather than
@@ -201,7 +202,7 @@ export function createSettingsRouter(config: AppConfig): Router {
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : "failed to send test syslog message" });
     }
-  });
+  }));
 
   return router;
 }

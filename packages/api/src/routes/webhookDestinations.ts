@@ -15,6 +15,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
 import type { AppConfig } from "../config.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 const LIST_SELECT = {
   id: true,
@@ -44,7 +45,7 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
   // admin managing the allow-list itself needs to see disabled rows too
   // (otherwise there'd be no way to re-enable or delete one — it would
   // just vanish from the one screen that manages it).
-  router.get("/", requireAuth, async (req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (req, res) => {
     const isAdmin = req.session.user!.role === "ADMIN";
     const destinations = await prisma.webhookDestination.findMany({
       where: isAdmin ? undefined : { active: true },
@@ -52,13 +53,13 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
       orderBy: { name: "asc" },
     });
     res.json(destinations);
-  });
+  }));
 
   // The plaintext secret is only ever present in *this* response and in
   // POST /:id/rotate-secret's — the admin must copy it into the
   // receiver's config now, since it's never returned again afterward
   // (§27: previously there was no way for a receiver to ever learn it).
-  router.post("/", requireAuth, requireAdmin, async (req, res) => {
+  router.post("/", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const parsed = createWebhookDestinationSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -95,9 +96,9 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
     });
 
     res.status(201).json({ ...destination, secret });
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  router.patch("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const parsed = updateWebhookDestinationSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -145,12 +146,12 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
     });
 
     res.json(destination);
-  });
+  }));
 
   // Generates a fresh secret and returns it once — for a receiver that
   // lost its copy, or as routine hygiene. The old secret stops
   // validating signatures immediately; there's no overlap window.
-  router.post("/:id/rotate-secret", requireAuth, requireAdmin, async (req, res, next) => {
+  router.post("/:id/rotate-secret", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const user = req.session.user!;
     const secret = generateWebhookSecret();
     const encryptedHmacSecret = encryptSecret(secret, config.API_KEY_ENCRYPTION_KEY);
@@ -184,7 +185,7 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
     });
 
     res.json({ ...destination, secret });
-  });
+  }));
 
   // Sends a signed sample payload for real (§27: previously the only
   // way to check a destination worked was to wait for a Job to actually
@@ -192,7 +193,7 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
   // but a single attempt with immediate feedback instead of the run
   // pipeline's retry/audit posture, matching how /smtp/test and
   // /syslog/test behave elsewhere in this router family.
-  router.post("/:id/test", requireAuth, requireAdmin, async (req, res) => {
+  router.post("/:id/test", requireAuth, requireAdmin, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const destination = await prisma.webhookDestination.findUnique({ where: { id: req.params.id } });
     if (!destination) {
@@ -255,12 +256,12 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
       });
       res.status(502).json({ error: errorMessage });
     }
-  });
+  }));
 
   // Hard delete — job_webhook_destinations cascades, so any Job that had
   // this destination attached just stops notifying it, same practical
   // effect as removing it from the allow-list would have anyway.
-  router.delete("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  router.delete("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const user = req.session.user!;
     let destination;
     try {
@@ -288,7 +289,7 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   return router;
 }

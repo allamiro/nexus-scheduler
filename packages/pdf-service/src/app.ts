@@ -1,4 +1,4 @@
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import express, { type Express, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import { renderRunReportPdf, renderUsageReportPdf } from "@nexus-scheduler/pdf";
 import { pinoHttp } from "pino-http";
 import type { PdfServiceConfig } from "./config.js";
@@ -7,6 +7,15 @@ import type { Metrics } from "./metrics.js";
 import { runReportRequestSchema, usageReportRequestSchema } from "./schemas.js";
 
 const REQUEST_TIMEOUT_MS = 35_000; // slightly above renderer.ts's own per-render timeout
+
+// Express 4 doesn't forward a rejected async handler's promise to `next`,
+// so an unexpected error here would otherwise become an unhandled
+// rejection instead of reaching the error-handling middleware above.
+function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>): RequestHandler {
+  return (req, res, next) => {
+    fn(req, res, next).catch(next);
+  };
+}
 
 // Isolated PDF-rendering component (REQUIREMENTS §2.5's recommended
 // architecture — its own pod, no network egress via NetworkPolicy,
@@ -67,12 +76,12 @@ export function createApp(config: PdfServiceConfig, logger: Logger, metrics: Met
   app.get("/healthz", (_req, res) => res.status(200).send("ok"));
   app.get("/readyz", (_req, res) => res.status(200).send("ok"));
 
-  app.get("/metrics", async (_req, res) => {
+  app.get("/metrics", asyncHandler(async (_req, res) => {
     res.setHeader("Content-Type", metrics.register.contentType);
     res.send(await metrics.register.metrics());
-  });
+  }));
 
-  app.post("/render/run-report", async (req, res) => {
+  app.post("/render/run-report", asyncHandler(async (req, res) => {
     const parsed = runReportRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -91,9 +100,9 @@ export function createApp(config: PdfServiceConfig, logger: Logger, metrics: Met
       logger.error({ err }, "run-report render failed");
       res.status(502).json({ error: "PDF render failed" });
     }
-  });
+  }));
 
-  app.post("/render/usage-report", async (req, res) => {
+  app.post("/render/usage-report", asyncHandler(async (req, res) => {
     const parsed = usageReportRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -112,7 +121,7 @@ export function createApp(config: PdfServiceConfig, logger: Logger, metrics: Met
       logger.error({ err }, "usage-report render failed");
       res.status(502).json({ error: "PDF render failed" });
     }
-  });
+  }));
 
   return app;
 }

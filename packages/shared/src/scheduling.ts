@@ -62,7 +62,7 @@ function parseHHmm(value: string): [number, number] {
 function nextWeekday(from: DateTime, dowSundayBased: number, hour: number, minute: number): DateTime {
   const luxonWeekday = dowSundayBased === 0 ? 7 : dowSundayBased;
   let candidate = from.set({ hour, minute, second: 0, millisecond: 0 });
-  let daysToAdd = (luxonWeekday - from.weekday + 7) % 7;
+  const daysToAdd = (luxonWeekday - from.weekday + 7) % 7;
   candidate = candidate.plus({ days: daysToAdd });
   if (candidate <= from) {
     candidate = candidate.plus({ weeks: 1 });

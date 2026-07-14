@@ -9,7 +9,7 @@ import { startHealthServer } from "./health.js";
 import { createMetrics } from "./metrics.js";
 import { startUsageReportLoop } from "./usageReportScheduler.js";
 
-async function main() {
+function main() {
   const config = loadConfig();
   const logger = createLogger(config);
 
@@ -29,18 +29,24 @@ async function main() {
   logger.info("nexus-scheduler worker started");
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
-    process.on(signal, async () => {
+    process.on(signal, () => {
       logger.info({ signal }, "shutting down worker");
       clearInterval(usageReportInterval);
-      await runWorker.close();
-      await queue.close();
-      process.exit(0);
+      void (async () => {
+        await runWorker.close();
+        await queue.close();
+        process.exit(0);
+      })().catch((err: unknown) => {
+        logger.error({ err }, "error during shutdown");
+        process.exit(1);
+      });
     });
   }
 }
 
-main().catch((err) => {
-  // eslint-disable-next-line no-console
+try {
+  main();
+} catch (err) {
   console.error("fatal startup error", err);
   process.exit(1);
-});
+}

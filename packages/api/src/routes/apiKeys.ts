@@ -6,6 +6,7 @@ import { getEffectiveTeamIds } from "../access.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
 import { listLibreChatAgents } from "../librechatDiscovery.js";
 import type { AppConfig } from "../config.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 // LibreChat API keys — entered per-user via the web UI, or held by a
 // Team for shared/durable schedules (REQUIREMENTS.md §2/§2.1/§4). Raw
@@ -26,7 +27,7 @@ export function createApiKeysRouter(config: AppConfig): Router {
   // Every key the current user is allowed to *use* when building a Job:
   // their own personal keys, plus any Team-owned key for a Team they're
   // effectively a member of.
-  router.get("/", requireAuth, async (req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const effectiveTeamIds = await getEffectiveTeamIds(user.id);
 
@@ -52,9 +53,9 @@ export function createApiKeysRouter(config: AppConfig): Router {
       orderBy: { createdAt: "desc" },
     });
     res.json(keys);
-  });
+  }));
 
-  router.post("/", requireAuth, async (req, res) => {
+  router.post("/", requireAuth, asyncHandler(async (req, res) => {
     const parsed = createApiKeySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -98,9 +99,9 @@ export function createApiKeysRouter(config: AppConfig): Router {
     });
 
     res.status(201).json(apiKey);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, async (req, res) => {
+  router.patch("/:id", requireAuth, asyncHandler(async (req, res) => {
     const parsed = updateApiKeySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -138,9 +139,9 @@ export function createApiKeysRouter(config: AppConfig): Router {
     });
 
     res.json(updated);
-  });
+  }));
 
-  router.delete("/:id", requireAuth, async (req, res) => {
+  router.delete("/:id", requireAuth, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const key = await prisma.apiKey.findUnique({ where: { id: req.params.id } });
     if (!key) {
@@ -169,7 +170,7 @@ export function createApiKeysRouter(config: AppConfig): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   // Agent discovery (§2.1) — lets the Job form offer a picker instead
   // of a hand-typed agent ID. Best-effort: any failure (LibreChat
@@ -177,7 +178,7 @@ export function createApiKeysRouter(config: AppConfig): Router {
   // unexpected response shape) is a plain error response, and the
   // frontend falls back to manual entry rather than blocking Job
   // creation on this working.
-  router.get("/:id/agents", requireAuth, async (req, res) => {
+  router.get("/:id/agents", requireAuth, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const key = await prisma.apiKey.findUnique({ where: { id: req.params.id } });
     if (!key) {
@@ -200,7 +201,7 @@ export function createApiKeysRouter(config: AppConfig): Router {
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : "agent discovery failed" });
     }
-  });
+  }));
 
   return router;
 }

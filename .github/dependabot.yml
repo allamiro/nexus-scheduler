@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Single npm workspaces tree (one root package-lock.json covers all six
+  # packages/* workspaces), so one entry at "/" is enough — Dependabot
+  # resolves workspace manifests from the root lockfile automatically.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

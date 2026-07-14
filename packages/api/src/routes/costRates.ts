@@ -4,6 +4,7 @@ import { createCostRateSchema, updateCostRateSchema } from "@nexus-scheduler/sha
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/requireAuth.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 function isNotFoundError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025";
@@ -19,12 +20,12 @@ function isConflictError(err: unknown): boolean {
 export function createCostRatesRouter(): Router {
   const router = Router();
 
-  router.get("/", requireAuth, requireAdmin, async (_req, res) => {
+  router.get("/", requireAuth, requireAdmin, asyncHandler(async (_req, res) => {
     const rates = await prisma.costRate.findMany({ orderBy: [{ agentId: "asc" }, { effectiveFrom: "desc" }] });
     res.json(rates);
-  });
+  }));
 
-  router.post("/", requireAuth, requireAdmin, async (req, res, next) => {
+  router.post("/", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const parsed = createCostRateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -66,9 +67,9 @@ export function createCostRatesRouter(): Router {
     });
 
     res.status(201).json(rate);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  router.patch("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const parsed = updateCostRateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -118,9 +119,9 @@ export function createCostRatesRouter(): Router {
     });
 
     res.json(rate);
-  });
+  }));
 
-  router.delete("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  router.delete("/:id", requireAuth, requireAdmin, asyncHandler(async (req, res, next) => {
     const user = req.session.user!;
     let rate;
     try {
@@ -151,7 +152,7 @@ export function createCostRatesRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   return router;
 }

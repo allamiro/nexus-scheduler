@@ -8,6 +8,7 @@ coverage/
 .env.*.local
 .DS_Store
 *.tsbuildinfo
+*.rdb
 
 # Prisma
 packages/shared/prisma/generated/

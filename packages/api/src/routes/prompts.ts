@@ -12,6 +12,7 @@ import { requireProjectAccess } from "../middleware/requireProjectAccess.js";
 import { requirePromptAccess } from "../middleware/requirePromptAccess.js";
 import { getAccessibleProjectIds } from "../access.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 function isUniqueConflict(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -70,15 +71,15 @@ async function createNextPromptVersion(
 export function createProjectPromptsRouter(): Router {
   const router = Router({ mergeParams: true });
 
-  router.get("/", requireAuth, requireProjectAccess("READ"), async (req, res) => {
+  router.get("/", requireAuth, requireProjectAccess("READ"), asyncHandler(async (req, res) => {
     const prompts = await prisma.prompt.findMany({
       where: { projectId: req.params.projectId },
       orderBy: { updatedAt: "desc" },
     });
     res.json(prompts);
-  });
+  }));
 
-  router.post("/", requireAuth, requireProjectAccess("EDIT"), async (req, res) => {
+  router.post("/", requireAuth, requireProjectAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = createPromptSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -122,7 +123,7 @@ export function createProjectPromptsRouter(): Router {
     });
 
     res.status(201).json(prompt);
-  });
+  }));
 
   return router;
 }
@@ -133,7 +134,7 @@ export function createProjectPromptsRouter(): Router {
 export function createPromptsRouter(): Router {
   const router = Router();
 
-  router.get("/", requireAuth, async (req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const projectIds = await getAccessibleProjectIds(user.id);
     if (projectIds.length === 0) {
@@ -173,9 +174,9 @@ export function createPromptsRouter(): Router {
     );
 
     res.json(prompts.map((p) => ({ ...p, isFavorite: myFavoriteIds.has(p.id) })));
-  });
+  }));
 
-  router.get("/:id", requireAuth, requirePromptAccess("READ"), async (req, res) => {
+  router.get("/:id", requireAuth, requirePromptAccess("READ"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const [prompt, isFavorite] = await Promise.all([
       prisma.prompt.findUnique({
@@ -192,9 +193,9 @@ export function createPromptsRouter(): Router {
       }),
     ]);
     res.json({ ...prompt, isFavorite: !!isFavorite, projectAccess: req.projectAccess });
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requirePromptAccess("EDIT"), async (req, res) => {
+  router.patch("/:id", requireAuth, requirePromptAccess("EDIT"), asyncHandler(async (req, res) => {
     const parsed = updatePromptSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -219,9 +220,9 @@ export function createPromptsRouter(): Router {
     });
 
     res.json(prompt);
-  });
+  }));
 
-  router.delete("/:id", requireAuth, requirePromptAccess("EDIT"), async (req, res) => {
+  router.delete("/:id", requireAuth, requirePromptAccess("EDIT"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
 
     // Job.promptId has no cascade path (a Job without a Prompt makes no
@@ -249,21 +250,21 @@ export function createPromptsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
-  router.get("/:id/versions", requireAuth, requirePromptAccess("READ"), async (req, res) => {
+  router.get("/:id/versions", requireAuth, requirePromptAccess("READ"), asyncHandler(async (req, res) => {
     const versions = await prisma.promptVersion.findMany({
       where: { promptId: req.params.id },
       orderBy: { versionNumber: "desc" },
       include: { createdBy: { select: { id: true, email: true, displayName: true } } },
     });
     res.json(versions);
-  });
+  }));
 
   // Every edit creates a new version rather than mutating content in
   // place (REQUIREMENTS.md §2.3) — prior versions stay intact so
   // schedules pinned to them are unaffected.
-  router.post("/:id/versions", requireAuth, requirePromptAccess("EDIT"), async (req, res, next) => {
+  router.post("/:id/versions", requireAuth, requirePromptAccess("EDIT"), asyncHandler(async (req, res, next) => {
     const parsed = createPromptVersionSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -306,9 +307,9 @@ export function createPromptsRouter(): Router {
     });
 
     res.status(201).json(version);
-  });
+  }));
 
-  router.post("/:id/favorite", requireAuth, requirePromptAccess("READ"), async (req, res) => {
+  router.post("/:id/favorite", requireAuth, requirePromptAccess("READ"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     await prisma.promptFavorite.upsert({
       where: { userId_promptId: { userId: user.id, promptId: req.params.id! } },
@@ -316,15 +317,15 @@ export function createPromptsRouter(): Router {
       update: {},
     });
     res.status(204).send();
-  });
+  }));
 
-  router.delete("/:id/favorite", requireAuth, requirePromptAccess("READ"), async (req, res) => {
+  router.delete("/:id/favorite", requireAuth, requirePromptAccess("READ"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     await prisma.promptFavorite
       .delete({ where: { userId_promptId: { userId: user.id, promptId: req.params.id! } } })
       .catch(() => undefined); // already-unfavorited is not an error
     res.status(204).send();
-  });
+  }));
 
   return router;
 }

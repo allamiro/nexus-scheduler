@@ -10,6 +10,7 @@ import { requireAuth, requireEditor } from "../middleware/requireAuth.js";
 import { requireTeamAccess } from "../middleware/requireTeamAccess.js";
 import { recordAuditEvent, diffChangedFields } from "../audit.js";
 import { getDescendantTeamIds } from "../access.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 // Teams are local-only, UI-managed groups used purely as a Project ACL
 // sharing target (REQUIREMENTS.md §2.3/§4) — not sourced from Keycloak,
@@ -29,7 +30,7 @@ export function createTeamsRouter(): Router {
   // Team you don't belong to is existing, working behavior neither of
   // those flows should lose. Admins always get every Team either way
   // (REQUIREMENTS §4: admins have full control over all Teams).
-  router.get("/", requireAuth, async (req, res) => {
+  router.get("/", requireAuth, asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const isAdmin = user.role === "ADMIN";
     const mineOnly = req.query.mine === "true" && !isAdmin;
@@ -49,9 +50,9 @@ export function createTeamsRouter(): Router {
         viewerIsOwner: isAdmin || memberships[0]?.isOwner === true,
       })),
     );
-  });
+  }));
 
-  router.get("/:id", requireAuth, requireTeamAccess("MEMBER"), async (req, res) => {
+  router.get("/:id", requireAuth, requireTeamAccess("MEMBER"), asyncHandler(async (req, res) => {
     const team = await prisma.team.findUnique({
       where: { id: req.params.id },
       include: {
@@ -65,9 +66,9 @@ export function createTeamsRouter(): Router {
       return;
     }
     res.json({ ...team, viewerIsOwner: req.teamAccess === "OWNER" });
-  });
+  }));
 
-  router.post("/", requireAuth, requireEditor, async (req, res) => {
+  router.post("/", requireAuth, requireEditor, asyncHandler(async (req, res) => {
     const parsed = createTeamSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -106,9 +107,9 @@ export function createTeamsRouter(): Router {
     });
 
     res.status(201).json(team);
-  });
+  }));
 
-  router.patch("/:id", requireAuth, requireTeamAccess("OWNER"), async (req, res) => {
+  router.patch("/:id", requireAuth, requireTeamAccess("OWNER"), asyncHandler(async (req, res) => {
     const parsed = updateTeamSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -146,9 +147,9 @@ export function createTeamsRouter(): Router {
     });
 
     res.json(team);
-  });
+  }));
 
-  router.delete("/:id", requireAuth, requireTeamAccess("OWNER"), async (req, res) => {
+  router.delete("/:id", requireAuth, requireTeamAccess("OWNER"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
     const [subTeamCount, aclCount] = await Promise.all([
       prisma.team.count({ where: { parentTeamId: req.params.id } }),
@@ -177,9 +178,9 @@ export function createTeamsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
-  router.post("/:id/members", requireAuth, requireTeamAccess("OWNER"), async (req, res) => {
+  router.post("/:id/members", requireAuth, requireTeamAccess("OWNER"), asyncHandler(async (req, res) => {
     const parsed = addTeamMemberSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -217,13 +218,13 @@ export function createTeamsRouter(): Router {
     });
 
     res.status(201).json(membership);
-  });
+  }));
 
   // Promotes/demotes a member's owner status — blocked if it would
   // leave the Team with zero owners, since that's a state only an
   // admin could then recover from (same posture as this deployment
   // takes toward legacy pre-ownership Teams).
-  router.patch("/:id/members/:userId", requireAuth, requireTeamAccess("OWNER"), async (req, res) => {
+  router.patch("/:id/members/:userId", requireAuth, requireTeamAccess("OWNER"), asyncHandler(async (req, res) => {
     const parsed = updateTeamMembershipSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -283,9 +284,9 @@ export function createTeamsRouter(): Router {
     });
 
     res.json(updated);
-  });
+  }));
 
-  router.delete("/:id/members/:userId", requireAuth, requireTeamAccess("OWNER"), async (req, res) => {
+  router.delete("/:id/members/:userId", requireAuth, requireTeamAccess("OWNER"), asyncHandler(async (req, res) => {
     const user = req.session.user!;
 
     const membership = await prisma.teamMembership.findUnique({
@@ -330,7 +331,7 @@ export function createTeamsRouter(): Router {
     });
 
     res.status(204).send();
-  });
+  }));
 
   return router;
 }
