@@ -31,12 +31,23 @@ RUN npm run prisma:generate --workspace=packages/shared
 RUN npm run build --workspace=packages/shared
 RUN npm run build --workspace=packages/api
 
+# Strips devDependencies (typescript, vite/esbuild pulled in by the
+# frontend workspace, eslint, etc.) out of the hoisted node_modules
+# before it gets copied into the runtime image below — none of that
+# build-only tooling has any business shipping in a runtime container
+# (REQUIREMENTS §3/§10; issue #91). Runtime deps across every workspace
+# (express, @prisma/client, bullmq, ...) are unaffected.
+RUN npm prune --omit=dev
+
 FROM node:20-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 # See the build stage above — @prisma/client needs OpenSSL present at
-# runtime too, for every query it makes.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+# runtime too, for every query it makes. `apt-get upgrade` pulls in
+# whatever current Debian security patches exist at build time
+# regardless of how stale the cached base layer is (same "don't pin,
+# always take the latest patch" rationale as DL3008's exception below).
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd --system nexus && useradd --system --gid nexus --home-dir /app nexus
 
