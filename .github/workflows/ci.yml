@@ -63,6 +63,13 @@ jobs:
       - name: Generate Prisma client
         run: npm run prisma:generate
 
+      # Deployment applies the schema via `prisma db push` with no
+      # migration history, so an invalid schema otherwise wouldn't
+      # surface until deploy (issue #50). The push step below then
+      # doubles as the "applies cleanly to a real database" check.
+      - name: Validate Prisma schema
+        run: npm run prisma:validate --workspace=packages/shared
+
       - name: Push schema to the test database
         run: npm run prisma:push --workspace=packages/shared
 
