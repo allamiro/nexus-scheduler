@@ -29,6 +29,17 @@ RUN npm run build --workspace=packages/shared
 RUN npm run build --workspace=packages/frontend
 
 FROM nginxinc/nginx-unprivileged:stable-alpine AS runtime
+# Picks up whatever current Alpine security patches exist at build time
+# regardless of how stale the cached base layer is (same rationale as
+# the Debian `apt-get upgrade` steps in the other three Dockerfiles —
+# issue #91). This base image already runs as the unprivileged `nginx`
+# user by default; `apk upgrade` needs root, so this briefly switches
+# back and restores the non-root user afterward — the final image's
+# runtime user is unchanged.
+USER root
+RUN apk upgrade --no-cache
+USER nginx
+
 COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
 COPY packages/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8080
