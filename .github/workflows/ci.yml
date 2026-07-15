@@ -79,8 +79,19 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm test
+      # Runs the same suites as `npm test` but with V8 coverage and the
+      # per-package thresholds in each vitest.config.ts (issue #52) —
+      # a large untested addition fails here even if its tests pass.
+      - name: Test (with coverage thresholds)
+        run: npm run test:coverage
+
+      - name: Upload coverage summaries
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-summaries
+          path: packages/*/coverage/coverage-summary.json
+          if-no-files-found: ignore
 
   # Runs separately from build-and-test since it needs neither Postgres/
   # Redis nor a build — just the installed dependency tree. Scoped to
