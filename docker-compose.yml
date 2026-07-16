@@ -190,7 +190,11 @@ services:
   # LiteLLM routes, it does not run inference — Ollama stays the local
   # inference engine behind it.
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    # The -database variant is the image LiteLLM documents for
+    # Postgres-backed deployments (virtual keys, spend) — the base
+    # image isn't guaranteed to ship the Prisma/DB pieces /key/generate
+    # needs.
+    image: ghcr.io/berriai/litellm-database:main-stable
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     depends_on:
       litellm-postgres:
@@ -226,7 +230,9 @@ services:
   # is where those ceilings attach (/key/update or the :4000/ui admin
   # dashboard). Safe to re-run; no-ops when the key already exists.
   litellm-init:
-    image: ghcr.io/berriai/litellm:main-stable
+    # Same image as the litellm service (only python3 is used here) so
+    # the stack pulls one LiteLLM image, not two.
+    image: ghcr.io/berriai/litellm-database:main-stable
     depends_on:
       litellm:
         condition: service_healthy
