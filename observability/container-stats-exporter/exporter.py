@@ -24,6 +24,10 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 DOCKER_SOCK = os.environ.get("DOCKER_SOCK", "/var/run/docker.sock")
+# Scope to this Compose project — the Engine API sees every container on
+# the host, and (as with Alloy's log discovery) leaking other projects'
+# workloads into dashboards served with anonymous admin is not okay.
+COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT", "nexus-scheduler")
 PORT = int(os.environ.get("PORT", "9101"))
 
 
@@ -60,7 +64,9 @@ def render():
         "# TYPE container_cpu_usage_seconds_total counter",
     ]
     try:
-        containers = docker_get("/containers/json")
+        import urllib.parse
+        filters = urllib.parse.quote(json.dumps({"label": [f"com.docker.compose.project={COMPOSE_PROJECT}"]}))
+        containers = docker_get(f"/containers/json?filters={filters}")
     except OSError:
         lines.append("container_stats_exporter_up 0")
         return "\n".join(lines) + "\n"

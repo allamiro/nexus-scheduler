@@ -118,6 +118,9 @@ services:
     image: ghcr.io/berriai/litellm-database:main-stable
     profiles: ["docker-desktop"]
     entrypoint: ["python3", "/app/exporter.py"]
+    environment:
+      # Scopes the Engine-API listing to this project's containers only.
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-nexus-scheduler}
     volumes:
       - ./observability/container-stats-exporter/exporter.py:/app/exporter.py:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
