@@ -44,6 +44,11 @@ call(
         "key": LIBRECHAT_KEY,
         "key_alias": "librechat",
         "user_id": "librechat",
+        # LLM-only: a default-type key can also reach LiteLLM's
+        # management routes (BerriAI/litellm#19492), which would hand
+        # LibreChat gateway-admin ability the master-key separation
+        # exists to prevent.
+        "key_type": "llm_api",
     },
 )
-print("created the librechat virtual key (alias: librechat)")
+print("created the librechat virtual key (alias: librechat, llm_api-only)")
