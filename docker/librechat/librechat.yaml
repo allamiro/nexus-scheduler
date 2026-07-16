@@ -1,11 +1,15 @@
 # LibreChat's own custom-endpoint config (bind-mounted at
 # /app/librechat.yaml, CONFIG_PATH set in docker-compose.yml). Safe to
-# commit — no secrets live here, unlike docker/librechat/.env.
+# commit — no secrets live here, unlike docker/librechat/.env: the
+# gateway key below is an environment reference, injected by
+# docker-compose.yml from the root .env.
 #
-# Defines the local Ollama instance (this repo's own ollama/ollama-pull
-# Compose services) as an OpenAI-compatible custom endpoint, running
-# qwen3:0.6b — Qwen3's smallest model — as a free, no-API-key model to
-# test Nexus Scheduler's full pipeline against. Anthropic/Claude
+# Defines the local LiteLLM gateway (this repo's own litellm Compose
+# service) as an OpenAI-compatible custom endpoint. LiteLLM routes to
+# Ollama (gemma3:1b as the default chat model, plus coding/reasoning
+# models — see docker/litellm/config.yaml) and meters every call:
+# per-key spend, budgets, rate limits (#38, #102). LibreChat therefore
+# no longer talks to Ollama directly. Anthropic/Claude
 # (docker-compose.yml's ANTHROPIC_API_KEY) is configured separately as
 # a built-in endpoint, not through this file.
 version: 1.3.13
@@ -13,18 +17,18 @@ cache: true
 
 endpoints:
   custom:
-    - name: "Ollama"
-      apiKey: "ollama"
-      baseURL: "http://ollama:11434/v1"
+    - name: "LiteLLM"
+      apiKey: "${LITELLM_API_KEY}"
+      baseURL: "http://litellm:4000/v1"
       models:
         default:
-          - "qwen3:0.6b"
-        # Ollama's own /v1/models lists whatever's actually been pulled
-        # (see the ollama-pull service) — let LibreChat query it live
-        # rather than trusting the hardcoded default above to stay
+          - "gemma3:1b"
+        # LiteLLM's /v1/models lists whatever its model_list actually
+        # routes (docker/litellm/config.yaml) — let LibreChat query it
+        # live rather than trusting the hardcoded default above to stay
         # accurate as models are added/changed.
         fetch: true
       titleConvo: true
-      titleModel: "qwen3:0.6b"
+      titleModel: "gemma3:1b"
       summarize: false
-      modelDisplayLabel: "Ollama (qwen3:0.6b)"
+      modelDisplayLabel: "LiteLLM (local models)"

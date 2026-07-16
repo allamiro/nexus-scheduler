@@ -7,16 +7,23 @@
 #   docker compose up --build
 #
 # Then: http://localhost:8080 (app via local nginx), :8025 (Mailpit UI),
-# :8081 (Keycloak, admin/${KEYCLOAK_ADMIN_PASSWORD}), :3080 (LibreChat).
+# :8081 (Keycloak, admin/${KEYCLOAK_ADMIN_PASSWORD}), :3080 (LibreChat),
+# :4000/ui (LiteLLM admin, log in with LITELLM_MASTER_KEY from .env).
 #
 # LibreChat needs at least one AI provider before it can run an Agent.
 # Two are wired up for local testing, either works, no config required
 # beyond what's already here:
-#   - Ollama running qwen3:0.6b (free, local, no API key) — the ollama/
-#     ollama-pull services below, exposed to LibreChat via
-#     docker/librechat/librechat.yaml as a custom endpoint.
+#   - Local models via LiteLLM -> Ollama (free, no API key) — the
+#     litellm/ollama/ollama-pull services below, exposed to LibreChat
+#     via docker/librechat/librechat.yaml as a custom endpoint. LiteLLM
+#     is the model gateway: it meters every call (per-key spend, hard
+#     budgets, RPM/TPM limits — usage data LibreChat's Agents API
+#     doesn't provide, #38/#102) and routes to Ollama for inference.
 #   - Claude/Anthropic — set ANTHROPIC_API_KEY in this file's own root
 #     .env, then `docker compose restart librechat`.
+#
+# Memory limits (mem_limit) are set on every service so the full stack
+# stays predictable on a 16GB host — caps, not reservations.
 # See README's Docker Compose section for the full first-run flow
 # (register in LibreChat, create an Agent, generate a LibreChat API
 # key, paste it into Nexus Scheduler's own API Keys page).
@@ -32,6 +39,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    mem_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -43,6 +51,7 @@ services:
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redis-data:/data
+    mem_limit: 256m
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
@@ -60,12 +69,14 @@ services:
     # Local stand-in for CAC/PIV-capable OIDC (REQUIREMENTS §4). Configure
     # a realm/client manually via the admin console for end-to-end OIDC
     # testing — no realm is pre-provisioned here yet.
+    mem_limit: 1g
 
   mailpit:
     image: axllent/mailpit:latest
     ports:
       - "8025:8025" # web UI
       - "1025:1025" # SMTP
+    mem_limit: 128m
 
   # Local stand-in for an on-prem syslog/SIEM receiver, so the syslog
   # audit-event mirror (REQUIREMENTS §7.1) can be exercised end to end
@@ -93,47 +104,119 @@ services:
       - ./docker/generated/syslog-test-certs/ca.pem:/etc/rsyslog-tls/ca.pem:ro
       - ./docker/generated/syslog-test-certs/server-cert.pem:/etc/rsyslog-tls/server-cert.pem:ro
       - ./docker/generated/syslog-test-certs/server-key.pem:/etc/rsyslog-tls/server-key.pem:ro
+    mem_limit: 128m
 
   librechat-mongo:
     image: mongo:8.0.20
     command: mongod --noauth
     volumes:
       - librechat-mongo-data:/data/db
+    mem_limit: 768m
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # Free, no-API-key-required test model — wired into LibreChat below as
-  # a custom OpenAI-compatible endpoint (docker/librechat/librechat.yaml)
-  # alongside/instead of Anthropic. CPU-only by default (no GPU
+  # Free, no-API-key-required local inference — reached only through the
+  # litellm gateway below (which LibreChat talks to via
+  # docker/librechat/librechat.yaml). CPU-only by default (no GPU
   # reservation) so this works the same on any machine; add a `deploy.
   # resources.reservations.devices` GPU block here if you have one and
   # want it faster.
+  #
+  # Deliberately NOT published to the host: Ollama has no auth, so the
+  # only way in is through LiteLLM — which is what enforces metering,
+  # budgets and rate limits on every call (#102). To poke at it
+  # manually: docker compose exec ollama ollama list
   ollama:
     image: ollama/ollama:latest
+    environment:
+      # The pulled set below doesn't fit in RAM simultaneously on a 16GB
+      # host — load one at a time, on demand, and evict after idling.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_KEEP_ALIVE: "5m"
     volumes:
       - ollama-data:/root/.ollama
-    ports:
-      - "11434:11434"
+    mem_limit: 6g
     healthcheck:
       test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  # One-shot: pulls qwen3:0.6b (Qwen3's smallest model, ~0.5GB) into the
-  # ollama service above once it's up. Only needs to run once per
-  # ollama-data volume — Ollama itself no-ops a re-pull of a model it
-  # already has. Check `docker compose logs -f ollama-pull` for download
-  # progress; it needs real internet access the first time.
+  # One-shot: pulls the local model set into the ollama service above
+  # once it's up — gemma3:1b (default chat, 815MB), codegemma:2b
+  # (coding, 1.6GB), phi4-mini-reasoning:3.8b (reasoning, 3.2GB); ~5.6GB
+  # of disk in the ollama-data volume, loaded into RAM one at a time
+  # (OLLAMA_MAX_LOADED_MODELS above). Override the set with
+  # OLLAMA_PULL_MODELS in .env (space-separated); anything added here
+  # also needs an entry in docker/litellm/config.yaml to be routable.
+  # Only needs to run once per ollama-data volume — Ollama itself no-ops
+  # a re-pull of a model it already has. Check `docker compose logs -f
+  # ollama-pull` for download progress; it needs real internet access
+  # the first time.
   ollama-pull:
     image: ollama/ollama:latest
     depends_on:
       ollama:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c", "OLLAMA_HOST=ollama:11434 ollama pull qwen3:0.6b"]
+    mem_limit: 512m
+    entrypoint: ["/bin/sh", "-c", "for m in ${OLLAMA_PULL_MODELS:-gemma3:1b codegemma:2b phi4-mini-reasoning:3.8b}; do OLLAMA_HOST=ollama:11434 ollama pull \"$$m\" || exit 1; done"]
+
+  # LiteLLM's own Postgres — virtual keys, per-key spend, budgets. Kept
+  # separate from the app's postgres so neither schema/lifecycle leaks
+  # into the other.
+  litellm-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD}
+    volumes:
+      - litellm-postgres-data:/var/lib/postgresql/data
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # The model gateway (#102): LibreChat -> LiteLLM -> Ollama (and
+  # optionally hosted providers — see docker/litellm/config.yaml).
+  # Meters every model call with per-key spend tracking, hard budgets
+  # (max_budget) and RPM/TPM rate limits; admin dashboard at
+  # http://localhost:4000/ui (log in with LITELLM_MASTER_KEY from .env).
+  # LiteLLM routes, it does not run inference — Ollama stays the local
+  # inference engine behind it.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      litellm-postgres:
+        condition: service_healthy
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Encrypts provider credentials stored in LiteLLM's DB — distinct
+      # from the master key so rotating one doesn't invalidate the other.
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      DATABASE_URL: postgresql://litellm:${LITELLM_POSTGRES_PASSWORD}@litellm-postgres:5432/litellm
+      # Passed through for the optional hosted-provider entry in
+      # docker/litellm/config.yaml; harmless when blank.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - type: bind
+        source: ./docker/litellm/config.yaml
+        target: /app/config.yaml
+        read_only: true
+    ports:
+      - "4000:4000"
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   # The actual AI backend Nexus Scheduler's Worker calls (REQUIREMENTS
   # §2.1) — a real local install, not a mock, so job runs actually work
@@ -147,6 +230,8 @@ services:
     image: registry.librechat.ai/danny-avila/librechat-dev:latest
     depends_on:
       librechat-mongo:
+        condition: service_healthy
+      litellm:
         condition: service_healthy
     environment:
       HOST: 0.0.0.0
@@ -168,9 +253,11 @@ services:
       # default set instead — a few more entries in the dropdown than
       # originally intended, but Agent creation actually works.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # Custom (non-built-in) endpoints — the local Ollama/qwen3:0.6b
-      # instance above — are defined in the bind-mounted librechat.yaml
-      # below.
+      # Custom (non-built-in) endpoints — the local LiteLLM gateway
+      # above (which routes on to Ollama) — are defined in the
+      # bind-mounted librechat.yaml below; it references this variable
+      # so the key never has to live in a committed file.
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
       CONFIG_PATH: /app/librechat.yaml
     volumes:
       - type: bind
@@ -184,6 +271,7 @@ services:
       - librechat-logs:/app/logs
     ports:
       - "3080:3080"
+    mem_limit: 1536m
 
   migrate:
     build:
@@ -196,6 +284,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 1g
 
   # Isolated PDF-rendering component (§2.5) — the only place in the
   # stack that runs headless Chromium. No ports published to the host;
@@ -209,6 +298,7 @@ services:
       PORT: 4100
       LOG_LEVEL: debug
       PDF_SERVICE_SHARED_SECRET: ${PDF_SERVICE_SHARED_SECRET}
+    mem_limit: 2g
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:4100/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 5s
@@ -247,6 +337,7 @@ services:
         condition: service_healthy
     ports:
       - "3000:3000"
+    mem_limit: 1g
 
   worker:
     build:
@@ -262,6 +353,11 @@ services:
       PDF_SERVICE_URL: http://pdf-service:4100
       PDF_SERVICE_SHARED_SECRET: ${PDF_SERVICE_SHARED_SECRET}
       LOG_LEVEL: debug
+      # Dev-stack default, far below the code's own default of 25
+      # (packages/worker/src/config.ts) — a CPU-only local model at a
+      # few tokens/sec can't serve 25 concurrent runs anyway. Override
+      # in .env if your machine can take more.
+      GLOBAL_MAX_CONCURRENT_RUNS: ${GLOBAL_MAX_CONCURRENT_RUNS:-5}
     depends_on:
       postgres:
         condition: service_healthy
@@ -271,11 +367,13 @@ services:
         condition: service_completed_successfully
       pdf-service:
         condition: service_healthy
+    mem_limit: 1g
 
   frontend:
     build:
       context: .
       dockerfile: packages/frontend/Dockerfile
+    mem_limit: 512m
 
   nginx:
     image: nginx:1.27-alpine
@@ -286,6 +384,7 @@ services:
     depends_on:
       - api
       - frontend
+    mem_limit: 128m
 
 volumes:
   postgres-data:
@@ -295,3 +394,4 @@ volumes:
   librechat-uploads:
   librechat-logs:
   ollama-data:
+  litellm-postgres-data:
