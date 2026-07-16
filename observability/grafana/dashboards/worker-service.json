@@ -14,7 +14,7 @@
     "from": "now-6h",
     "to": "now"
   },
-  "description": "The BullMQ worker: queue depth, run outcomes and the LibreChat calls that dominate job time. All three app metrics here are exposed by the worker only. Runtime names verified against prom-client 15.1.3.",
+  "description": "The BullMQ worker: queue depth, run outcomes, the LibreChat calls that dominate job time, and \u2014 since #104 \u2014 how long runs wait versus work, whether the scheduler is keeping up, and whether the concurrency ceiling is being hit. Runtime names verified against prom-client 15.1.3.",
   "panels": [
     {
       "type": "row",
@@ -472,6 +472,203 @@
         }
       ],
       "description": "Approaching max_fds means new connections start failing."
+    },
+    {
+      "type": "row",
+      "title": "Scheduler \u2014 the heart of the product",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Scheduler ticks by result",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "description": "`skipped_reentrant` is the saturation signal: the previous tick had not finished when the next was due, so it was dropped. If the scheduler stalls nothing runs and no run-level metric moves \u2014 the system reads as idle rather than broken, which is why this panel exists.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result) (rate(nexus_scheduler_tick_total[5m]))",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tick duration (p95) vs the tick interval",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "description": "A tick taking longer than SCHEDULER_TICK_MS is what produces skipped_reentrant above \u2014 this panel is the cause, that one is the effect.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nexus_scheduler_tick_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Schedule fires: claimed vs missed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "description": "A claimed fire produced a run; a missed one was overdue beyond tolerance and became a SKIPPED run instead. Missed rising means the scheduler is losing to its own schedules.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(nexus_scheduler_schedules_claimed_total[5m]))",
+          "legendFormat": "claimed/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(nexus_scheduler_schedules_missed_total[5m]))",
+          "legendFormat": "MISSED/s"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Capacity \u2014 waiting vs working",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue wait vs run duration (p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 57
+      },
+      "description": "The capacity question in one panel. Wait exceeding duration means runs spend longer queued than working \u2014 add workers or raise the ceiling. Duration rising with flat wait means the models got slower, not the queue. Depth alone cannot separate these.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nexus_scheduler_queue_wait_seconds_bucket[5m])))",
+          "legendFormat": "queue wait p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nexus_scheduler_run_duration_seconds_bucket[5m])))",
+          "legendFormat": "run duration p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Run duration by outcome (p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 57
+      },
+      "description": "Failures that are fast are usually rejections; failures that are slow are usually timeouts. Averaged together they hide both.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, status) (rate(nexus_scheduler_run_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Throttling against the configured ceiling",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
+      "description": "A throttled run was previously indistinguishable from a slow one \u2014 both simply start late. The limit is published from config, so this is the ceiling the worker is actually enforcing rather than a dashboard constant that drifts the day someone tunes the env var.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (scope) (rate(nexus_scheduler_runs_throttled_total[5m]))",
+          "legendFormat": "{{scope}} throttled/s"
+        },
+        {
+          "refId": "B",
+          "expr": "nexus_scheduler_concurrency_limit",
+          "legendFormat": "{{scope}} limit"
+        }
+      ]
     }
   ]
 }

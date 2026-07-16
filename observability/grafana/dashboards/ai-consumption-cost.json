@@ -1,98 +1,238 @@
 {
   "uid": "nexus-ai-cost",
-  "title": "AI — Consumption & Cost",
-  "tags": ["nexus-scheduler", "ai", "finops"],
+  "title": "AI \u2014 Consumption & Cost",
+  "tags": [
+    "nexus-scheduler",
+    "ai",
+    "finops"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "1m",
-  "time": { "from": "now-24h", "to": "now" },
-  "description": "Token throughput and spend — the FinOps view of an LLM workload. THIS DASHBOARD IS CURRENTLY EMPTY BY DESIGN: the app computes promptTokens/completionTokens/computedCost and writes them to Postgres, but never exposes them as metrics (#104). Cost data is also unreliable until LiteLLM meters the calls (#102), because LibreChat's Agents API returns an all-zero usage object (#38).",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "description": "Token throughput and spend \u2014 the FinOps view. Token counters are live. **Cost is still not meaningful**: computedCost requires configured cost rates, and LibreChat's Agents API returns an all-zero usage object for headless API-key calls (#38), so usage is frequently null at the source. LiteLLM (#102) is what makes it authoritative.",
   "panels": [
     {
       "type": "text",
-      "title": "Why these panels are empty",
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "title": "What is and is not trustworthy here",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
-        "content": "**Two prerequisites, both tracked:**\n\n1. **#104 — expose token/cost metrics.** `processor.ts` already computes `promptTokens`, `completionTokens` and `computedCost` and writes them to Postgres, but no Prometheus counter exposes them. Needed: `nexus_scheduler_run_tokens_total{type,model}` and `nexus_scheduler_run_cost_total{model}`.\n2. **#102 — LiteLLM as the model gateway.** LibreChat's Agents API returns an **all-zero usage object** (#38), so token counts are frequently `null` at the source. LiteLLM meters every call and also exposes its own per-key/model spend metrics.\n\nUntil both land, spend can only be answered with SQL against the `runs` table — not alerted on."
+        "content": "**Tokens: live.** `nexus_scheduler_run_tokens_total{model,type}` is populated from the usage LibreChat reports, labelled by the model that actually served the call.\n\n**Cost: not yet trustworthy.** Two independent reasons:\n\n1. **Cost rates** must be configured per agent, or `computeCost` returns null and nothing is counted.\n2. **#102 \u2014 LiteLLM as the gateway.** LibreChat's Agents API returns an **all-zero usage object** (#38) for headless API-key calls, so token counts are frequently `null` at the source. Tokens are recorded only when usage is actually reported \u2014 a zero would read as \"this run was free\" rather than \"we were never told\".\n\nUntil both land, spend panels stay empty **by design** rather than showing a confidently wrong number."
       }
     },
     {
       "type": "row",
-      "title": "Token throughput — REQUIRES #104",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+      "title": "Token throughput",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      }
     },
     {
       "type": "timeseries",
       "title": "Tokens/sec by type",
-      "description": "Requires nexus_scheduler_run_tokens_total{type=\"prompt|completion\"}.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "description": "nexus_scheduler_run_tokens_total{type=\"prompt|completion\"} \u2014 live.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
       "targets": [
-        { "refId": "A", "expr": "sum by (type) (rate(nexus_scheduler_run_tokens_total[5m]))", "legendFormat": "{{type}}" }
+        {
+          "refId": "A",
+          "expr": "sum by (type) (rate(nexus_scheduler_run_tokens_total[5m]))",
+          "legendFormat": "{{type}}"
+        }
       ]
     },
     {
       "type": "timeseries",
       "title": "Tokens/sec by model",
-      "description": "Requires a `model` label. Label by model — never by agentId/jobId/userId (unbounded cardinality); per-user breakdowns belong in the audit trail.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "description": "Labelled by the serving model, never by agentId/jobId/userId \u2014 those are user-created and unbounded (#108 is the same mistake in the API route label).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
       "targets": [
-        { "refId": "A", "expr": "sum by (model) (rate(nexus_scheduler_run_tokens_total[5m]))", "legendFormat": "{{model}}" }
+        {
+          "refId": "A",
+          "expr": "sum by (model) (rate(nexus_scheduler_run_tokens_total[5m]))",
+          "legendFormat": "{{model}}"
+        }
       ]
     },
     {
       "type": "row",
-      "title": "Spend — REQUIRES #104 + #102",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+      "title": "Spend \u2014 requires cost rates + #102",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      }
     },
     {
       "type": "stat",
       "title": "Spend (24h)",
       "description": "Requires nexus_scheduler_run_cost_total. Meaningful only once LiteLLM (#102) makes usage authoritative.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 15 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
       "targets": [
-        { "refId": "A", "expr": "sum(increase(nexus_scheduler_run_cost_total[24h]))", "legendFormat": "spend" }
+        {
+          "refId": "A",
+          "expr": "sum(increase(nexus_scheduler_run_cost_total[24h]))",
+          "legendFormat": "spend"
+        }
       ]
     },
     {
       "type": "timeseries",
       "title": "Spend rate by model",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 7, "w": 10, "x": 6, "y": 15 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 10,
+        "x": 6,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
       "targets": [
-        { "refId": "A", "expr": "sum by (model) (rate(nexus_scheduler_run_cost_total[10m])) * 3600", "legendFormat": "{{model}} $/h" }
+        {
+          "refId": "A",
+          "expr": "sum by (model) (rate(nexus_scheduler_run_cost_total[10m])) * 3600",
+          "legendFormat": "{{model}} $/h"
+        }
       ]
     },
     {
       "type": "stat",
       "title": "Cost per successful run",
       "description": "Unit economics: spend divided by successful runs. The number that tells you whether a model/prompt change actually paid off.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 15 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
       "targets": [
-        { "refId": "A", "expr": "sum(increase(nexus_scheduler_run_cost_total[24h])) / clamp_min(sum(increase(nexus_scheduler_runs_total{status=\"success\"}[24h])), 1)", "legendFormat": "$/successful run" }
+        {
+          "refId": "A",
+          "expr": "sum(increase(nexus_scheduler_run_cost_total[24h])) / clamp_min(sum(increase(nexus_scheduler_runs_total{status=\"success\"}[24h])), 1)",
+          "legendFormat": "$/successful run"
+        }
       ]
     },
     {
       "type": "row",
-      "title": "Gateway budgets — REQUIRES #102 (LiteLLM)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 }
+      "title": "Gateway budgets \u2014 requires #102 (LiteLLM)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      }
     },
     {
       "type": "timeseries",
       "title": "LiteLLM spend by key/model",
-      "description": "LiteLLM exposes native Prometheus metrics for per-key/model spend, tokens, latency and failures — the authoritative source once #102 lands. It also enforces hard budgets, turning this from a cost *report* into a cost *control*.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 23 },
+      "description": "LiteLLM exposes native Prometheus metrics for per-key/model spend, tokens, latency and failures \u2014 the authoritative source once #102 lands. It also enforces hard budgets, turning this from a cost *report* into a cost *control*.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
       "targets": [
-        { "refId": "A", "expr": "sum by (model) (rate(litellm_spend_metric_total[10m]))", "legendFormat": "{{model}}" }
+        {
+          "refId": "A",
+          "expr": "sum by (model) (rate(litellm_spend_metric_total[10m]))",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tokens per run (avg, by model)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "description": "Total tokens divided by successful runs, per model. The unit-economics number: it moves when a prompt or model changes, and is the cheapest early warning that a prompt has quietly grown. Written with on() group_left(): the numerator carries a model label and the denominator does not, so a plain division silently matches nothing.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (model) (increase(nexus_scheduler_run_tokens_total[1h])) / on() group_left() clamp_min(sum(increase(nexus_scheduler_runs_total{status=\"success\"}[1h])), 1)",
+          "legendFormat": "{{model}}"
+        }
       ]
     }
   ]
