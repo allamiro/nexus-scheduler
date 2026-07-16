@@ -69,8 +69,11 @@ explicitly configured rather than fetched at install time.
   and acceptance is audit-logged. Re-shown on every visit to the login
   page rather than remembered, matching how consent-to-monitor banners
   are expected to behave.
-- **Observability** — Prometheus metrics, a Postgres-backed audit log,
-  and an optional RFC 5424 syslog mirror for SIEM integration.
+- **Observability** — Prometheus metrics from every service (including
+  per-model LLM latency, token consumption and error kinds), a
+  Postgres-backed audit log, and an optional RFC 5424 syslog mirror for
+  SIEM integration. An optional Grafana/Alloy/Mimir/Loki stack for local
+  development ships as a separate Compose file.
 - **Admin console** — user/role management, classification taxonomy,
   cost rates, and the webhook destination allow-list.
 - **Built-in Knowledge Base** — a searchable, offline (bundled, no
@@ -188,6 +191,44 @@ ANTHROPIC_API_KEY=
 
 </details>
 
+### Observability stack (optional)
+
+The app ships Prometheus metrics; this brings up somewhere to put them —
+Grafana with dashboards, backed by Mimir (metrics) and Loki (logs),
+collected by a single Alloy agent. Entirely optional: the app runs
+without it, and the stack is a separate Compose file precisely so it can
+be left off.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+# Grafana -> http://localhost:3300   (anonymous admin, dev only)
+```
+
+To turn it off again, just drop the second `-f` — nothing in
+`docker-compose.yml` depends on it.
+
+Eleven dashboards are provisioned automatically, covering the app
+(overview, API, worker, PDF service), the models (per-model latency,
+tokens, errors, spend, and local-vs-hosted savings), the infrastructure
+(Postgres, Redis, containers, host), the logs, and the collector itself.
+That last one matters more than it sounds: if the collector stops
+shipping, every other dashboard goes flat and looks exactly like a
+healthy, idle system — this is the only place that tells the two apart.
+
+Two small exporters fill gaps the upstream components leave. LiteLLM's
+OSS proxy has no `/metrics` endpoint (Prometheus export is an enterprise
+feature), so `litellm-exporter` turns its spend log into the counters the
+cost dashboard needs. And cAdvisor cannot read the cgroup tree on Docker
+Desktop's VM, so `container-stats-exporter` sources the same per-container
+numbers from the Engine API instead.
+
+Everything runs locally — no cloud, no external endpoints. Ports 3000
+and 3001 belong to the api and worker, so Grafana takes 3300.
+
+For Kubernetes, do **not** use this file — see the Helm notes under
+[Deployment](#kubernetes-helm): a real cluster already has a monitoring
+stack, and the app only needs to be scraped by it.
+
 ### Running a single package against the Compose infra
 
 ```bash
@@ -254,6 +295,22 @@ helm install nexus-scheduler helm/nexus-scheduler -f my-values.yaml
 - Run `helm template`/`helm lint` against your own values before
   installing, and see the chart's `NOTES.txt` (printed after install)
   for the exact list of Secrets that must exist beforehand.
+- Metrics are exposed by every service and collected by whatever the
+  cluster already runs — this chart deliberately does not deploy
+  Alloy/Mimir/Loki/Grafana. Two supported paths:
+  - **Prometheus Operator**: set `observability.serviceMonitor.enabled:
+    true` to render a ServiceMonitor per service. Off by default because
+    it needs the Operator's CRD, and applying one without it fails the
+    install. Most Operator installs also select ServiceMonitors by label
+    — set `observability.serviceMonitor.labels` (commonly `release:
+    kube-prometheus-stack`) or the objects are silently ignored, which
+    looks identical to the app not exposing metrics at all.
+  - **Annotation-based scraping**: nothing to enable — the api, worker
+    and pdf-service pods already carry `prometheus.io/scrape`.
+  The Grafana dashboards in `observability/grafana/dashboards/` are
+  plain JSON and can be imported or mounted as ConfigMaps for the
+  Grafana sidecar; they are not shipped in the chart, so they cannot
+  drift from the copies used by the Compose stack.
 
 ### Container images
 

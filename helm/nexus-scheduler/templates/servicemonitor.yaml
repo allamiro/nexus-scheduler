@@ -1,0 +1,50 @@
+{{- /*
+Integration point for a cluster that already runs Prometheus, rather than a
+monitoring stack of our own. The app exposes /metrics; the platform collects it.
+
+Deliberately not shipping Alloy/Mimir/Loki/Grafana in this chart: a real cluster
+already has them, and an app chart that brings its own would duplicate storage,
+compete for scrape ownership, and make this chart responsible for upgrading four
+infrastructure components it does not own. docker-compose.observability.yml
+exists for local development, where none of that is true.
+
+Off by default: this needs the Prometheus Operator's CRD, and rendering a
+ServiceMonitor into a cluster without it fails the apply. Turning it on is a
+statement that the CRD exists.
+*/ -}}
+{{- if .Values.observability.serviceMonitor.enabled }}
+{{- $components := list
+      (dict "name" "api"         "port" "http")
+      (dict "name" "worker"      "port" "health")
+      (dict "name" "pdf-service" "port" "http") }}
+{{- range $c := $components }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "nexus-scheduler.fullname" $ }}-{{ $c.name }}
+  labels:
+    {{- include "nexus-scheduler.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $c.name }}
+    {{- with $.Values.observability.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nexus-scheduler.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $c.name }}
+  namespaceSelector:
+    matchNames:
+      - {{ $.Release.Namespace }}
+  endpoints:
+    - port: {{ $c.port }}
+      path: /metrics
+      interval: {{ $.Values.observability.serviceMonitor.interval }}
+      scrapeTimeout: {{ $.Values.observability.serviceMonitor.scrapeTimeout }}
+      {{- with $.Values.observability.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}
