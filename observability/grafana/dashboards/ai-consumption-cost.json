@@ -185,12 +185,13 @@
         "w": 24,
         "x": 0,
         "y": 22
-      }
+      },
+      "description": "LiteLLM's Prometheus /metrics endpoint is an enterprise feature \u2014 on the OSS proxy this panel stays empty (404 from /metrics, verified). Authoritative spend lives in LiteLLM's own Postgres and /spend/logs API, and per-model token counts come from nexus_scheduler_run_tokens_total once the app-side metrics (PR #110) are deployed."
     },
     {
       "type": "timeseries",
       "title": "LiteLLM spend by key/model",
-      "description": "LiteLLM exposes native Prometheus metrics for per-key/model spend, tokens, latency and failures \u2014 the authoritative source once #102 lands. It also enforces hard budgets, turning this from a cost *report* into a cost *control*.",
+      "description": "LiteLLM's Prometheus /metrics endpoint is an enterprise feature \u2014 on the OSS proxy this panel stays empty (404 from /metrics, verified). Authoritative spend lives in LiteLLM's own Postgres and /spend/logs API, and per-model token counts come from nexus_scheduler_run_tokens_total once the app-side metrics (PR #110) are deployed.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"

@@ -93,7 +93,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\",status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\"}[5m])), 0.0001)",
+          "expr": "(sum(rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\",status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\"}[5m])), 0.0001)",
           "legendFormat": "5xx ratio"
         }
       ],

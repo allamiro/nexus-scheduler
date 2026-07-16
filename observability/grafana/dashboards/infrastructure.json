@@ -385,7 +385,7 @@
     {
       "type": "timeseries",
       "title": "Memory by container (top 10)",
-      "description": "Per-container working set. No container memory limits are set in this stack, so this is what explains Chromium/PDF and model-load failures. name!=\"\" keeps this to real containers \u2014 cAdvisor also reports host cgroups (/system.slice etc.) which would otherwise dominate the topk.",
+      "description": "Per-container working set. No container memory limits are set in this stack, so this is what explains Chromium/PDF and model-load failures. name!=\"\" keeps this to real containers \u2014 cAdvisor also reports host cgroups (/system.slice etc.) which would otherwise dominate the topk. Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -435,12 +435,13 @@
           "expr": "topk(10, sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[5m])))",
           "legendFormat": "{{name}}"
         }
-      ]
+      ],
+      "description": " Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault."
     },
     {
       "type": "timeseries",
       "title": "OOM kills",
-      "description": "Requires Alloy to read /dev/kmsg \u2014 see the devices: entry in docker-compose.observability.yml. Any non-zero value means a container was killed for memory.",
+      "description": "Requires Alloy to read /dev/kmsg \u2014 see the devices: entry in docker-compose.observability.yml. Any non-zero value means a container was killed for memory. Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"

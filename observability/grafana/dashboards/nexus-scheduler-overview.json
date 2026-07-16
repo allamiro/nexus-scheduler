@@ -171,7 +171,7 @@
     {
       "type": "timeseries",
       "title": "Container memory (cAdvisor)",
-      "description": "No container memory limits are set in this stack \u2014 this is what explains Chromium/PDF and Ollama model-load failures.",
+      "description": "No container memory limits are set in this stack \u2014 this is what explains Chromium/PDF and Ollama model-load failures. Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"

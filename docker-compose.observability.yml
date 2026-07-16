@@ -59,6 +59,13 @@ services:
       - SYSLOG
     volumes:
       - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Explicit socket bind on top of the /var/run directory mount below:
+      # on Docker Desktop (macOS/Windows) the directory bind carries the
+      # host's /var/run, which does NOT contain the engine socket — only
+      # this exact-path bind is special-cased to reach it. Redundant but
+      # harmless on a Linux host. Without it, container log discovery
+      # silently collects nothing on Docker Desktop.
+      - /var/run/docker.sock:/var/run/docker.sock
       # Container discovery + log tailing for every service in the stack.
       # cAdvisor needs the host's cgroup tree for per-container CPU/memory and
       # Docker's metadata to resolve those cgroups back to container names.
