@@ -212,3 +212,42 @@ securityContext:
   readOnlyRootFilesystem: true
   capabilities:
     drop: ["ALL"]
+
+# Observability. The app exposes Prometheus metrics on every service; this
+# section is about who collects them.
+#
+# Note what is deliberately absent: this chart does not ship Alloy, Mimir, Loki
+# or Grafana. A cluster that runs this app almost certainly already runs a
+# monitoring stack, and an app chart bringing its own would duplicate storage,
+# compete for scrape ownership, and make this chart responsible for upgrading
+# four components it does not own. docker-compose.observability.yml exists for
+# local development, where none of that is true.
+observability:
+  serviceMonitor:
+    # Off by default: a ServiceMonitor needs the Prometheus Operator's CRD, and
+    # applying one to a cluster without it fails outright. Enabling this is a
+    # statement that the CRD is installed.
+    #
+    # Without the Operator, the pod annotations already on the api, worker and
+    # pdf-service deployments (prometheus.io/scrape) cover the classic
+    # annotation-based scrape config — nothing here is required for that path.
+    enabled: false
+    # Matches the app's own scrape interval in the compose stack. The queue_depth
+    # gauge queries Redis on every scrape, so this is not free — halving it
+    # doubles that load for little extra resolution.
+    interval: 15s
+    scrapeTimeout: 10s
+    # Extra labels on the ServiceMonitor itself. Most Prometheus Operator
+    # installs select ServiceMonitors by label (`release: kube-prometheus-stack`
+    # is the common one) and will silently ignore this object without it —
+    # which looks exactly like the app not exposing metrics.
+    labels: {}
+    # Applied at ingestion, before storage. See #108: the `route` label on
+    # nexus_scheduler_http_request_duration_seconds currently contains raw ids
+    # for routers mounted with a param, which is unbounded cardinality. Until
+    # that is fixed upstream, a cluster can defend itself here, e.g.:
+    #   - sourceLabels: [route]
+    #     regex: '(/api/(projects|jobs)/)[0-9a-f-]{36}(/.*)'
+    #     targetLabel: route
+    #     replacement: '${1}:id${3}'
+    metricRelabelings: []
