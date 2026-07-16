@@ -1,3 +1,4 @@
+import { createCipheriv, getFips, randomBytes, scryptSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   decryptSecret,
@@ -9,6 +10,22 @@ import {
 } from "./crypto.js";
 
 const VALID_KEY = "a-valid-32-character-master-key!!";
+
+// Reproduces the pre-PBKDF2 on-disk format (scrypt-derived key, bare base64,
+// no version prefix) so the legacy read path is exercised against a real
+// value rather than a hand-written constant that could drift.
+function encryptLegacyScrypt(plaintext: string, masterKey: string): string {
+  const key = scryptSync(masterKey, "nexus-scheduler-static-salt-v1", 32);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64");
+}
+
+// scrypt is not FIPS-approved, so on a FIPS host these cannot run at all —
+// which is the whole point of this change. Skipped rather than failed: a
+// legacy value could never have been written on such a host either.
+const describeLegacy = getFips() ? describe.skip : describe;
 
 describe("encryptSecret / decryptSecret", () => {
   it("round-trips a plaintext secret", () => {
@@ -39,11 +56,22 @@ describe("encryptSecret / decryptSecret", () => {
 
   it("fails to decrypt tampered ciphertext (GCM auth tag check)", () => {
     const encrypted = encryptSecret("secret", VALID_KEY);
-    const raw = Buffer.from(encrypted, "base64");
+    // Strip the version prefix before decoding and restore it afterwards:
+    // base64-decoding the prefixed string would silently drop the marker and
+    // send the value down the legacy path, so this would pass without ever
+    // testing the auth tag.
+    const raw = Buffer.from(encrypted.slice("v2:".length), "base64");
     // Flip a bit somewhere in the ciphertext portion (past IV + auth tag).
     raw[raw.length - 1] = raw[raw.length - 1]! ^ 0xff;
-    const tampered = raw.toString("base64");
+    const tampered = `v2:${raw.toString("base64")}`;
     expect(() => decryptSecret(tampered, VALID_KEY)).toThrow();
+  });
+
+  // The stored format is the compatibility contract: without a marker there
+  // is no way to tell which KDF produced a value, so this is load-bearing
+  // rather than cosmetic.
+  it("tags new ciphertext with the v2 prefix", () => {
+    expect(encryptSecret("secret", VALID_KEY)).toMatch(/^v2:/);
   });
 
   // Regression for #16: an empty or too-short master key used to derive
@@ -62,6 +90,28 @@ describe("encryptSecret / decryptSecret", () => {
     expect(exactly32).toHaveLength(32);
     const encrypted = encryptSecret("secret", exactly32);
     expect(decryptSecret(encrypted, exactly32)).toBe("secret");
+  });
+});
+
+// Secrets written before this change must stay readable — an unreadable
+// LibreChat key means every scheduled run for that key silently starts failing.
+describeLegacy("backward compatibility with scrypt-era secrets", () => {
+  it("decrypts a legacy (unprefixed, scrypt-derived) ciphertext", () => {
+    const legacy = encryptLegacyScrypt("sk-legacy-key", VALID_KEY);
+    expect(legacy).not.toMatch(/^v2:/);
+    expect(decryptSecret(legacy, VALID_KEY)).toBe("sk-legacy-key");
+  });
+
+  it("still rejects a legacy ciphertext under the wrong master key", () => {
+    const legacy = encryptLegacyScrypt("sk-legacy-key", VALID_KEY);
+    expect(() => decryptSecret(legacy, "a-different-32-character-master!!")).toThrow();
+  });
+
+  it("re-encrypting a legacy secret upgrades it to the v2 format", () => {
+    const legacy = encryptLegacyScrypt("sk-legacy-key", VALID_KEY);
+    const upgraded = encryptSecret(decryptSecret(legacy, VALID_KEY), VALID_KEY);
+    expect(upgraded).toMatch(/^v2:/);
+    expect(decryptSecret(upgraded, VALID_KEY)).toBe("sk-legacy-key");
   });
 });
 
