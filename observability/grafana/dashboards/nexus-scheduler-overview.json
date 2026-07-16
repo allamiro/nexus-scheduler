@@ -171,7 +171,7 @@
     {
       "type": "timeseries",
       "title": "Container memory (cAdvisor)",
-      "description": "No container memory limits are set in this stack \u2014 this is what explains Chromium/PDF and Ollama model-load failures. Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault.",
+      "description": "No container memory limits are set in this stack \u2014 this is what explains Chromium/PDF and Ollama model-load failures. On Docker Desktop (macOS/Windows), cAdvisor cannot see the VM's cgroups \u2014 start the container-stats-exporter fallback instead: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile docker-desktop up -d. It emits the same metric names from the Docker Engine API, so this panel populates either way.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"

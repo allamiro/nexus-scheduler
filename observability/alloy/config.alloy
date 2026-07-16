@@ -236,3 +236,47 @@ loki.process "pino" {
 
   forward_to = [loki.write.loki.receiver]
 }
+
+// ---------------------------------------------------------------------------
+// Docker Desktop fallback: per-container stats via the Engine API
+// (container-stats-exporter, `docker-desktop` compose profile). Discovered
+// through the Docker socket rather than a static target so that on Linux
+// hosts — where cAdvisor works and the profile stays off — there is no
+// permanently-down target polluting the collector-health view.
+// ---------------------------------------------------------------------------
+discovery.relabel "container_stats" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = coalesce(sys.env("COMPOSE_PROJECT"), "nexus-scheduler")
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "container-stats-exporter"
+    action        = "keep"
+  }
+
+  // Point the scrape at the exporter's port on its compose-network IP
+  // (the service EXPOSEs nothing, so discovery's default port guess
+  // cannot be trusted).
+  rule {
+    source_labels = ["__meta_docker_network_ip"]
+    regex         = "(.+)"
+    target_label  = "__address__"
+    replacement   = "$1:9101"
+  }
+
+  rule {
+    target_label = "service"
+    replacement  = "container-stats"
+  }
+}
+
+prometheus.scrape "container_stats" {
+  targets         = discovery.relabel.container_stats.output
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+  scrape_interval = "15s"
+}
