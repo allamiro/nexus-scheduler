@@ -57,13 +57,17 @@ services:
     volumes:
       - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
       # Container discovery + log tailing for every service in the stack.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      # cAdvisor reads per-container CPU/memory from the host's cgroup tree and
-      # resolves container names/images from Docker's metadata. Without these
-      # it only ever reports the root cgroup (id="/") — i.e. no per-container
-      # data at all, which is the whole reason it's here.
-      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      # cAdvisor needs the host's cgroup tree for per-container CPU/memory and
+      # Docker's metadata to resolve those cgroups back to container names.
+      # Without them it only ever reports the root cgroup (id="/") — i.e. no
+      # per-container data at all, which is the whole reason it is here.
+      # This mount set follows the Alloy cadvisor exporter's Docker deployment
+      # example; /var/run (not just the socket) is what lets it resolve names.
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
       - alloy-data:/var/lib/alloy/data
     devices:
       # cAdvisor reads OOM-kill events from the kernel log. This must be a

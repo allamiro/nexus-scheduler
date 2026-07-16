@@ -23,5 +23,13 @@ datasources:
       # Correlate a log line to the audit trail / future traces by request id.
       derivedFields:
         - name: requestId
-          matcherRegex: '"requestId":"([^"]+)"'
-          url: '$${__value.raw}'
+          # Alloy attaches requestId as structured metadata rather than
+          # leaving it in the line body (see config.alloy), so match it as a
+          # label — a regex over the raw line would have to know pino's
+          # nested `req` shape and would break the moment it changed.
+          matcherType: label
+          matcherRegex: requestId
+          # Clicking the id pivots to every line for that request across all
+          # services, which is the point of carrying the id in the first place.
+          datasourceUid: loki
+          query: '{service=~".+"} | requestId=`$${__value.raw}`'

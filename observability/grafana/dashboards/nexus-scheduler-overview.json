@@ -191,8 +191,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (name, id) (container_memory_working_set_bytes{id!=\"/\"}))",
-          "legendFormat": "{{name}}{{id}}"
+          "expr": "topk(10, sum by (name) (container_memory_working_set_bytes{name!=\"\"}))",
+          "legendFormat": "{{name}}"
         }
       ]
     },
@@ -227,7 +227,7 @@
     {
       "type": "logs",
       "title": "Errors across all services (Loki)",
-      "description": "Every container's logs are collected, not just the app's.",
+      "description": "Errors from every container. The app services (pino) emit JSON, so their level is a parsed label; the rest are matched on content, since Alloy does not parse their formats. Query B excludes the pino services to avoid double-reporting the same line.",
       "datasource": {
         "type": "loki",
         "uid": "loki"
@@ -246,8 +246,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service=~\".+\", level=~\"error|fatal\"}",
-          "queryType": "range"
+          "queryType": "range",
+          "expr": "{service=~\".*-(api|worker|pdf-service)-.*\", level=~\"error|fatal\"}"
+        },
+        {
+          "refId": "B",
+          "queryType": "range",
+          "expr": "{service=~\".+\", service!~\".*-(api|worker|pdf-service)-.*\"} |~ \"(?i)\\\\b(error|fatal|panic|emerg|alert|crit)\\\\b\""
         }
       ]
     }

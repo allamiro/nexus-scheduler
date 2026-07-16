@@ -117,8 +117,10 @@ loki.process "pino" {
 
     stage.json {
       expressions = {
-        level     = "level",
-        requestId = "requestId",
+        level = "level",
+        // pino-http serializes the id returned by genReqId under the nested
+        // `req` object, so there is no top-level `requestId` to match on.
+        requestId = "req.id",
       }
     }
 
@@ -133,6 +135,16 @@ loki.process "pino" {
     stage.labels {
       values = {
         level = "",
+      }
+    }
+
+    // requestId is a UUID per request — as a label it would blow up Loki's
+    // index (a stream per request). Structured metadata is exactly the
+    // escape hatch for high-cardinality fields: attached to the line and
+    // filterable, without becoming part of the stream identity.
+    stage.structured_metadata {
+      values = {
+        requestId = "",
       }
     }
   }
