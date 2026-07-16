@@ -1,0 +1,84 @@
+# LiteLLM proxy config (bind-mounted into the litellm container at
+# /app/config.yaml). Safe to commit — secrets (master key, salt key,
+# database password) come in through the container's environment, which
+# generate-local-env.sh writes into the root .env.
+#
+# LiteLLM sits between LibreChat and the model backends
+# (LibreChat -> LiteLLM -> Ollama, plus optional hosted providers) so
+# that every model call is metered by the gateway itself: per-key spend
+# tracking, hard budgets (max_budget), and RPM/TPM rate limits — the
+# authoritative usage data LibreChat's Agents API doesn't provide
+# (issue #38, #102). Admin dashboard: http://localhost:4000/ui (log in
+# with LITELLM_MASTER_KEY from .env).
+#
+# Every model here must actually exist in the ollama service before a
+# call to it can succeed — Ollama does not pull on demand. The default
+# set below matches what the ollama-pull Compose service pulls.
+
+model_list:
+  # Default chat / text tasks (replaces qwen3:0.6b) — Google, 815MB, 32K context
+  - model_name: gemma3:1b
+    litellm_params:
+      model: ollama_chat/gemma3:1b
+      api_base: http://ollama:11434
+
+  # Coding — Google, 1.6GB, 8K context
+  - model_name: codegemma:2b
+    litellm_params:
+      model: ollama_chat/codegemma:2b
+      api_base: http://ollama:11434
+
+  # Reasoning — Microsoft, 3.2GB, 128K context
+  - model_name: phi4-mini-reasoning:3.8b
+    litellm_params:
+      model: ollama_chat/phi4-mini-reasoning:3.8b
+      api_base: http://ollama:11434
+
+  # Optional extras — uncomment after adding them to OLLAMA_PULL_MODELS
+  # (see docker-compose.yml) or pulling manually:
+  #   docker compose exec ollama ollama pull <model>
+  #
+  # Smaller chat option — Google, 292MB, 32K context
+  # - model_name: gemma3:270m
+  #   litellm_params:
+  #     model: ollama_chat/gemma3:270m
+  #     api_base: http://ollama:11434
+  #
+  # Larger text tasks — Google, 3.3GB, 128K context
+  # - model_name: gemma3:4b
+  #   litellm_params:
+  #     model: ollama_chat/gemma3:4b
+  #     api_base: http://ollama:11434
+  #
+  # Coding alternative with longer context — BigCode, 1.7GB, 16K context
+  # - model_name: starcoder2:3b
+  #   litellm_params:
+  #     model: ollama_chat/starcoder2:3b
+  #     api_base: http://ollama:11434
+  #
+  # General, heavier — Mistral AI, 4.4GB, 32K context
+  # - model_name: mistral:7b
+  #   litellm_params:
+  #     model: ollama_chat/mistral:7b
+  #     api_base: http://ollama:11434
+  #
+  # Hosted provider through the same gateway (real agentic work — the
+  # small local models above are weak at tool calling). Metering and
+  # budgets then cover it too:
+  # - model_name: claude-sonnet
+  #   litellm_params:
+  #     model: anthropic/claude-sonnet-5
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+
+litellm_settings:
+  # Ollama runs one model at a time here (OLLAMA_MAX_LOADED_MODELS=1);
+  # don't let a slow local generation hold a request slot forever.
+  request_timeout: 600
+  # Local-first posture: don't phone home.
+  telemetry: false
+
+general_settings:
+  # Virtual keys + per-key spend live in LiteLLM's own Postgres
+  # (litellm-postgres service); master key and database URL come from
+  # the environment (LITELLM_MASTER_KEY / DATABASE_URL).
+  master_key: os.environ/LITELLM_MASTER_KEY

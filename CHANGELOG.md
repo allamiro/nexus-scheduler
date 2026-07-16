@@ -10,6 +10,24 @@ packages, so there's no per-package versioning here (see `scripts/release.mjs`).
 
 ## [Unreleased]
 
+### Added
+
+- The dev Compose stack now runs LiteLLM as the model gateway between
+  LibreChat and Ollama: every model call is metered at the gateway
+  (per-key spend, hard budgets, RPM/TPM rate limits, admin dashboard
+  at `:4000/ui`) — the authoritative usage data LibreChat's Agents API
+  doesn't provide (#38, #102). LibreChat authenticates with a
+  dedicated, auto-provisioned virtual key rather than the gateway's
+  admin master key, so budget/rate ceilings actually bind to its
+  traffic. The bundled local models switch from
+  `qwen3:0.6b` to a small CPU-friendly set — `gemma3:1b` (default
+  chat), `codegemma:2b` (coding), `phi4-mini-reasoning:3.8b`
+  (reasoning) — loaded one at a time (`OLLAMA_MAX_LOADED_MODELS=1`).
+  Ollama's unauthenticated `:11434` is no longer published to the
+  host, every Compose service now carries a memory limit sized for a
+  16GB machine, and the worker's `GLOBAL_MAX_CONCURRENT_RUNS` defaults
+  to 5 in the dev stack (#102).
+
 ### Security
 
 - Hardened the api, worker, pdf-service, and frontend runtime images:

@@ -282,7 +282,9 @@ flowchart TB
         MAIL[mailpit]
         LC2[[librechat<br/>real local instance]]
         MONGO2[(librechat-mongo)]
-        OLLAMA2[ollama<br/>qwen3:0.6b, or use<br/>a real Anthropic key]
+        LITELLM2[litellm<br/>model gateway: metering,<br/>budgets, rate limits]
+        LLPG2[(litellm-postgres)]
+        OLLAMA2[ollama<br/>gemma3:1b + coding/reasoning<br/>models, or use a real<br/>Anthropic key]
     end
 
     NGINX2 --> FE2
@@ -295,7 +297,9 @@ flowchart TB
     W2 --> PDF2
     W2 -- Bearer API key --> LC2
     LC2 --> MONGO2
-    LC2 --> OLLAMA2
+    LC2 --> LITELLM2
+    LITELLM2 --> OLLAMA2
+    LITELLM2 --> LLPG2
     API2 -. OIDC .-> KC2
     W2 -. SMTP .-> MAIL
 ```

@@ -122,6 +122,7 @@ Then:
 | Mailpit (catches outbound email) | http://localhost:8025 |
 | Keycloak admin console | http://localhost:8081 (`admin` / see `.env`) |
 | LibreChat | http://localhost:3080 |
+| LiteLLM admin (model spend/budgets/keys) | http://localhost:4000/ui (log in with `LITELLM_MASTER_KEY` from `.env`) |
 
 Log in to Nexus Scheduler with "Sign in with password" using
 `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` from `.env` (defaults
@@ -143,9 +144,17 @@ to test SSO login end to end.
 scriptable):
 
 1. Pick a model provider. Two are wired up already:
-   - **Ollama running `qwen3:0.6b`** — free, local, no API key needed.
-     Pulls automatically on first `docker compose up` (~0.5GB, needs
-     internet the first time only).
+   - **Local models via LiteLLM → Ollama** — free, no API key needed.
+     `gemma3:1b` (default chat), `codegemma:2b` (coding) and
+     `phi4-mini-reasoning:3.8b` (reasoning) pull automatically on first
+     `docker compose up` (~5.6GB of disk, loaded into RAM one at a
+     time; needs internet the first time only). LiteLLM is the gateway
+     in front of Ollama: it meters every call — per-key spend, hard
+     budgets, rate limits — which is the usage data LibreChat's Agents
+     API doesn't report (#38). Small CPU-only models are fine for
+     exercising the pipeline but weak at tool calling; for real agentic
+     work add a hosted model behind the same gateway
+     (`docker/litellm/config.yaml`).
    - **Claude** — set `ANTHROPIC_API_KEY` in this repo's root `.env` to
      a real key, then `docker compose restart librechat`.
 
@@ -185,6 +194,16 @@ LibreChat support was added, add these two lines by hand:
 LIBRECHAT_BASE_URL=http://librechat:3080
 ANTHROPIC_API_KEY=
 ```
+
+**Adding LiteLLM to an existing `.env`**: re-run
+`./scripts/generate-local-env.sh` — it appends freshly generated
+`LITELLM_MASTER_KEY`/`LITELLM_SALT_KEY`/`LITELLM_POSTGRES_PASSWORD`/
+`LITELLM_LIBRECHAT_KEY` lines to an existing `.env` that predates the
+LiteLLM gateway, without touching any existing values. LibreChat
+authenticates to the gateway with the `LITELLM_LIBRECHAT_KEY` virtual
+key (provisioned automatically by the `litellm-init` service); the
+master key is the admin credential — use it for the `:4000/ui`
+dashboard and to attach budgets/rate limits to the LibreChat key.
 
 </details>
 
