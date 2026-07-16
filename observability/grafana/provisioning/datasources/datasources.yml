@@ -31,5 +31,11 @@ datasources:
           matcherRegex: requestId
           # Clicking the id pivots to every line for that request across all
           # services, which is the point of carrying the id in the first place.
+          #
+          # With datasourceUid set, `url` carries the *query* to run against
+          # that datasource — there is no `query` key. Provisioning stores
+          # jsonData verbatim, so a wrong key is persisted silently and the
+          # link simply never fires.
           datasourceUid: loki
-          query: '{service=~".+"} | requestId=`$${__value.raw}`'
+          url: '{service=~".+"} | requestId=`$${__value.raw}`'
+          urlDisplayLabel: 'All logs for this request'
