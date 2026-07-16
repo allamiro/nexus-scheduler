@@ -83,8 +83,11 @@ def render():
         if usage is None:
             continue
         # Same definition cAdvisor uses for working set: usage minus
-        # reclaimable page cache (cgroup v2 reports inactive_file).
-        inactive = (mem.get("stats") or {}).get("inactive_file") or 0
+        # reclaimable page cache. cgroup v2 daemons report it as
+        # inactive_file; cgroup v1 as total_inactive_file — check both
+        # or v1 hosts silently export total usage as working set.
+        mstats = mem.get("stats") or {}
+        inactive = mstats.get("inactive_file") or mstats.get("total_inactive_file") or 0
         working_set = max(usage - inactive, 0)
         cpu_ns = ((stats.get("cpu_stats") or {}).get("cpu_usage") or {}).get("total_usage")
         lines.append(f'container_memory_working_set_bytes{{name="{esc(name)}"}} {working_set}')

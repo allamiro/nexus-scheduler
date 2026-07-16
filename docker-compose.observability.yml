@@ -113,7 +113,7 @@ services:
   # socket and emits them under the cAdvisor metric names the panels
   # already query. Profile-gated OFF by default — on a Linux host cAdvisor
   # works and running both would double-count. Enable with:
-  #   docker compose --profile docker-desktop up -d
+  #   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile docker-desktop up -d
   container-stats-exporter:
     image: ghcr.io/berriai/litellm-database:main-stable
     profiles: ["docker-desktop"]
