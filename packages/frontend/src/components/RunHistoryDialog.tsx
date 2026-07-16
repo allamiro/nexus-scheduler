@@ -19,6 +19,7 @@ import {
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import HistoryIcon from "@mui/icons-material/History";
+import CancelOutlinedIcon from "@mui/icons-material/CancelOutlined";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link as RouterLink } from "react-router-dom";
@@ -65,6 +66,18 @@ export function RunHistoryDialog({
     },
   });
 
+  // Cancellation (issue #111) only ever *requests* — the Worker is the
+  // one that actually marks a Run CANCELLED, on its own timing (either
+  // right away if it's still queued, or once an in-flight agent call
+  // aborts) — so this just re-polls; the 5s refetchInterval above picks
+  // up the eventual status change same as any other in-flight Run.
+  const cancelRun = useMutation({
+    mutationFn: (runId: string) => apiFetch(`/api/runs/${runId}/cancel`, { method: "POST" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs", jobId, "runs"] });
+    },
+  });
+
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -72,6 +85,7 @@ export function RunHistoryDialog({
       </DialogTitle>
       <DialogContent>
         {runNow.isError && <Alert severity="error" sx={{ mb: 2 }}>Failed to start a run.</Alert>}
+        {cancelRun.isError && <Alert severity="error" sx={{ mb: 2 }}>Failed to cancel the run.</Alert>}
         <List dense>
           {runsQuery.data?.map((run) => (
             <Box key={run.id}>
@@ -103,16 +117,29 @@ export function RunHistoryDialog({
                       Started: {run.startedAt ? new Date(run.startedAt).toLocaleString() : "—"} · Completed:{" "}
                       {run.completedAt ? new Date(run.completedAt).toLocaleString() : "—"}
                     </Typography>
-                    <Button
-                      size="small"
-                      startIcon={<PictureAsPdfIcon fontSize="small" />}
-                      component="a"
-                      href={`/api/runs/${run.id}/pdf`}
-                      target="_blank"
-                      rel="noopener"
-                    >
-                      Download PDF
-                    </Button>
+                    <Stack direction="row" spacing={1}>
+                      {canRun && (run.status === "PENDING" || run.status === "RUNNING") && (
+                        <Button
+                          size="small"
+                          color="error"
+                          startIcon={<CancelOutlinedIcon fontSize="small" />}
+                          disabled={cancelRun.isPending}
+                          onClick={() => cancelRun.mutate(run.id)}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        startIcon={<PictureAsPdfIcon fontSize="small" />}
+                        component="a"
+                        href={`/api/runs/${run.id}/pdf`}
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        Download PDF
+                      </Button>
+                    </Stack>
                   </Stack>
                   {(run.promptTokens != null || run.completionTokens != null) && (
                     <Typography variant="body2" color="text.secondary">

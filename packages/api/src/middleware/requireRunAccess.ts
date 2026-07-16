@@ -7,9 +7,10 @@ import { routeParam } from "./routeParam.js";
 const RANK: Record<Exclude<ProjectAccessLevel, null>, number> = { READ: 1, EDIT: 2, OWNER: 3 };
 
 // A Run's access is inherited from its Job's Project, same chain as
-// requireJobAccess/requireScheduleAccess (REQUIREMENTS.md §2.3). Runs are
-// read-only from the API's perspective (created via schedule fire or
-// run-now), so this is only ever used with minLevel "READ".
+// requireJobAccess/requireScheduleAccess (REQUIREMENTS.md §2.3). Runs
+// are created via schedule fire or run-now, never directly through this
+// middleware's routes — "READ" covers viewing one, "EDIT" covers the
+// one mutation a Run supports directly: cancelling it (issue #111).
 export function requireRunAccess(minLevel: "READ" | "EDIT" | "OWNER") {
   return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     const user = req.session.user;

@@ -195,3 +195,68 @@ describe("project tenancy", () => {
     expect([403, 404]).toContain(res.status);
   });
 });
+
+// Regression tests for issue #111: the API's half of run cancellation
+// only ever records a request (a durable Redis Set entry + a best-effort
+// pub/sub nudge) — it never writes the Run's terminal state itself, so
+// these assert exactly that boundary rather than a status change that
+// belongs to the Worker (covered end to end in packages/worker's own
+// processor.test.ts).
+describe("run cancellation (issue #111)", () => {
+  async function makeRunFixture() {
+    const { user, email, password } = await makeLocalUser();
+    const agent = await agentFor(email, password);
+    const project = await prisma.project.create({ data: { name: "Cancel Test", ownerId: user.id, visibility: "PRIVATE" } });
+    const prompt = await prisma.prompt.create({ data: { projectId: project.id, name: "Prompt" } });
+    await prisma.promptVersion.create({
+      data: { promptId: prompt.id, versionNumber: 1, content: "hi", createdById: user.id },
+    });
+    const apiKey = await makeApiKeyForUser(user.id);
+    const job = await prisma.job.create({
+      data: { projectId: project.id, name: "Job", promptId: prompt.id, agentId: "agent-1", apiKeyId: apiKey.id, createdById: user.id },
+    });
+    return { agent, job };
+  }
+
+  it("records a cancellation request for a pending run without writing its status", async () => {
+    const { agent, job } = await makeRunFixture();
+    const run = await prisma.run.create({ data: { jobId: job.id, triggerType: "MANUAL", status: "PENDING" } });
+
+    const res = await agent.post(`/api/runs/${run.id}/cancel`);
+    expect(res.status).toBe(202);
+
+    // Status is untouched — that's the Worker's job, not the API's.
+    const unchanged = await prisma.run.findUniqueOrThrow({ where: { id: run.id } });
+    expect(unchanged.status).toBe("PENDING");
+
+    const redisClient = app.get("redisClient") as { sismember(key: string, member: string): Promise<number> };
+    const requested = await redisClient.sismember("nexus:run-cancel-requested", run.id);
+    expect(requested).toBe(1);
+
+    const events = await prisma.auditEvent.findMany({ where: { targetId: run.id, action: "run.cancel_request" } });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.result).toBe("SUCCESS");
+  });
+
+  it("rejects cancelling a run that's already in a terminal state", async () => {
+    const { agent, job } = await makeRunFixture();
+    const run = await prisma.run.create({ data: { jobId: job.id, triggerType: "MANUAL", status: "SUCCESS" } });
+
+    const res = await agent.post(`/api/runs/${run.id}/cancel`);
+    expect(res.status).toBe(409);
+
+    const redisClient = app.get("redisClient") as { sismember(key: string, member: string): Promise<number> };
+    const requested = await redisClient.sismember("nexus:run-cancel-requested", run.id);
+    expect(requested).toBe(0);
+  });
+
+  it("does not let a user cancel a run in another user's private project", async () => {
+    const { job } = await makeRunFixture();
+    const run = await prisma.run.create({ data: { jobId: job.id, triggerType: "MANUAL", status: "PENDING" } });
+
+    const outsider = await makeLocalUser();
+    const outsiderAgent = await agentFor(outsider.email, outsider.password);
+    const res = await outsiderAgent.post(`/api/runs/${run.id}/cancel`);
+    expect([403, 404]).toContain(res.status);
+  });
+});

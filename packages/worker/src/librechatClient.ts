@@ -20,7 +20,8 @@ export type LibreChatErrorKind =
   | "rate_limit"
   | "upstream_error"
   | "client_error"
-  | "network_error";
+  | "network_error"
+  | "cancelled";
 
 export class LibreChatError extends Error {
   constructor(
@@ -49,6 +50,10 @@ function kindFromStatus(status: number): LibreChatErrorKind {
 export interface LibreChatClientOptions {
   baseUrl: string;
   timeoutMs: number;
+  // Lets a caller abort an in-flight call for a reason other than the
+  // timeout below (run cancellation — processor.ts). Optional so every
+  // other caller/test is unaffected.
+  abortSignal?: AbortSignal;
 }
 
 export async function callAgent(
@@ -65,6 +70,11 @@ export async function callAgent(
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+  // If the caller's signal is already aborted (cancelled before this
+  // call even started), AbortSignal.any's returned signal is aborted
+  // immediately too — fetch below rejects synchronously-ish, same as
+  // any other abort.
+  const signal = options.abortSignal ? AbortSignal.any([controller.signal, options.abortSignal]) : controller.signal;
 
   try {
     const response = await fetch(`${options.baseUrl}/api/agents/v1/chat/completions`, {
@@ -74,7 +84,7 @@ export async function callAgent(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal,
     });
 
     if (!response.ok) {
@@ -93,18 +103,21 @@ export async function callAgent(
     if (err instanceof LibreChatError) {
       throw err;
     }
-    // Network errors / aborts are treated as transient (§2.1 retry policy).
-    // A timeout arrives here as a generic AbortError, indistinguishable from a
-    // connection failure by message alone — but the only thing that aborts this
-    // signal is our own timeout above, so the signal itself is the reliable
-    // witness. Without this, "the model is too slow for the job budget" and
-    // "LibreChat is unreachable" are the same datapoint, and they call for
-    // opposite responses.
+    // Network errors / aborts are treated as transient (§2.1 retry policy) —
+    // except a caller-requested cancellation, which is intentionally
+    // terminal and must never retry. Both a timeout and an external
+    // cancellation arrive here as a generic AbortError, indistinguishable
+    // by message alone — but each has exactly one signal that can have
+    // caused it, so the signals themselves are the reliable witness.
+    // Checked in this order because a cancellation racing the timeout
+    // (both fire around the same moment) should still read as "the user
+    // asked for this," not "the job budget ran out."
+    const kind = options.abortSignal?.aborted ? "cancelled" : controller.signal.aborted ? "timeout" : "network_error";
     throw new LibreChatError(
       err instanceof Error ? err.message : "unknown LibreChat request error",
       0,
-      true,
-      controller.signal.aborted ? "timeout" : "network_error",
+      kind !== "cancelled",
+      kind,
     );
   } finally {
     clearTimeout(timeout);
