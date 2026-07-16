@@ -1,20 +1,38 @@
 {
   "uid": "nexus-overview",
-  "title": "Nexus Scheduler — Overview",
-  "tags": ["nexus-scheduler"],
+  "title": "Nexus Scheduler \u2014 Overview",
+  "tags": [
+    "nexus-scheduler"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
       "type": "timeseries",
       "title": "Runs by outcome (rate)",
       "description": "nexus_scheduler_runs_total. Note: CANCELLED is not currently recorded (see #104).",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
@@ -27,8 +45,16 @@
       "type": "timeseries",
       "title": "Queue depth by state (BullMQ)",
       "description": "nexus_scheduler_queue_depth. Rising 'waiting' with flat 'active' = worker saturation or a stuck scheduler.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "targets": [
         {
           "refId": "A",
@@ -40,18 +66,35 @@
     {
       "type": "timeseries",
       "title": "LibreChat call latency vs job timeout",
-      "description": "p50/p95/p99 of nexus_scheduler_librechat_call_duration_seconds. The 600s line is DEFAULT_JOB_TIMEOUT_SECONDS — p95 approaching it means runs are about to time out. NOTE: buckets currently stop at 300s (#104), so values above 300s are not resolvable yet.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 8 },
+      "description": "p50/p95/p99 of nexus_scheduler_librechat_call_duration_seconds. The 600s line is DEFAULT_JOB_TIMEOUT_SECONDS \u2014 p95 approaching it means runs are about to time out. NOTE: buckets currently stop at 300s (#104), so values above 300s are not resolvable yet.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "s",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 300 },
-              { "color": "red", "value": 600 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 600
+              }
             ]
           }
         },
@@ -79,9 +122,22 @@
       "type": "timeseries",
       "title": "API requests (RED)",
       "description": "nexus_scheduler_http_request_duration_seconds, labelled by matched route (not raw URL).",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 8 },
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
@@ -93,9 +149,17 @@
     {
       "type": "timeseries",
       "title": "PDF renders by result",
-      "description": "nexus_scheduler_pdf_renders_total — the Chromium path (most memory-hungry component).",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+      "description": "nexus_scheduler_pdf_renders_total \u2014 the Chromium path (most memory-hungry component).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 17
+      },
       "targets": [
         {
           "refId": "A",
@@ -107,25 +171,51 @@
     {
       "type": "timeseries",
       "title": "Container memory (cAdvisor)",
-      "description": "No container memory limits are set in this stack — this is what explains Chromium/PDF and Ollama model-load failures.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
-      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "description": "No container memory limits are set in this stack \u2014 this is what explains Chromium/PDF and Ollama model-load failures.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, sum by (name) (container_memory_working_set_bytes{name!=\"\"}))",
-          "legendFormat": "{{name}}"
+          "expr": "topk(10, sum by (name, id) (container_memory_working_set_bytes{id!=\"/\"}))",
+          "legendFormat": "{{name}}{{id}}"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Node event loop lag (p99)",
-      "description": "From collectDefaultMetrics — the app's own saturation signal.",
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "description": "From collectDefaultMetrics \u2014 the app's own saturation signal.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
@@ -138,9 +228,21 @@
       "type": "logs",
       "title": "Errors across all services (Loki)",
       "description": "Every container's logs are collected, not just the app's.",
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 25 },
-      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      },
       "targets": [
         {
           "refId": "A",

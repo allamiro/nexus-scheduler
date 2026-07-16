@@ -1,0 +1,133 @@
+{
+  "uid": "nexus-ai-perf",
+  "title": "AI — Model Performance & Reliability",
+  "tags": ["nexus-scheduler", "ai"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "description": "Latency, throughput, errors and outcome quality for agent runs against LibreChat. Latency/throughput/error-rate/saturation are the standard dimensions for serving-side LLM monitoring.",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Latency (available today)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Model call latency vs job timeout",
+      "description": "p50/p95/p99 of nexus_scheduler_librechat_call_duration_seconds. The 600s threshold is DEFAULT_JOB_TIMEOUT_SECONDS — p95 approaching it is the early warning that runs are about to fail. NOTE: buckets currently stop at 300s (#104), so anything slower is not resolvable yet.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 300 },
+              { "color": "red", "value": 600 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(nexus_scheduler_librechat_call_duration_seconds_bucket[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(nexus_scheduler_librechat_call_duration_seconds_bucket[5m])))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(nexus_scheduler_librechat_call_duration_seconds_bucket[5m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Avg model call duration",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(nexus_scheduler_librechat_call_duration_seconds_sum[5m])) / sum(rate(nexus_scheduler_librechat_call_duration_seconds_count[5m]))", "legendFormat": "avg" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Throughput & outcomes",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Model calls / sec",
+      "description": "Serving throughput. Derived from the latency histogram's _count.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 11 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(nexus_scheduler_librechat_call_duration_seconds_count[5m]))", "legendFormat": "calls/s" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Run outcomes",
+      "description": "nexus_scheduler_runs_total by status — the quality signal for agent runs. NOTE: CANCELLED is not currently recorded and timeouts are indistinguishable from generic failures (#104).",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 11 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (rate(nexus_scheduler_runs_total[5m]))", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Run success rate",
+      "description": "Share of terminal runs that succeeded.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 11 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.9 },
+              { "color": "green", "value": 0.98 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(nexus_scheduler_runs_total{status=\"success\"}[30m])) / clamp_min(sum(rate(nexus_scheduler_runs_total[30m])), 0.0001)", "legendFormat": "success rate" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Errors (waiting on #104: per-model + per-outcome labels, error counters)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Model errors by kind — REQUIRES #104",
+      "description": "Needs nexus_scheduler_librechat_errors_total{kind}, which does not exist yet. Today LibreChatError is raised but never counted, so timeouts/rate-limits/upstream failures cannot be separated. Panel stays empty until #104 lands.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (kind) (rate(nexus_scheduler_librechat_errors_total[5m]))", "legendFormat": "{{kind}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency by model — REQUIRES #104",
+      "description": "Needs a `model` label on nexus_scheduler_librechat_call_duration_seconds. The histogram is currently unlabelled, so per-model comparison (the basis for model selection/tuning) is impossible. Panel stays empty until #104 lands.",
+      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, model) (rate(nexus_scheduler_librechat_call_duration_seconds_bucket[5m])))", "legendFormat": "{{model}} p95" }
+      ]
+    }
+  ]
+}
