@@ -218,6 +218,29 @@ services:
       timeout: 5s
       retries: 10
 
+  # One-shot: provisions the dedicated virtual key LibreChat uses
+  # against the gateway (docker/litellm/init-librechat-key.py). Least
+  # privilege: the master key stays the admin credential and never
+  # enters the librechat container — and LiteLLM enforces per-key
+  # spend, max_budget and RPM/TPM limits on virtual keys, so this key
+  # is where those ceilings attach (/key/update or the :4000/ui admin
+  # dashboard). Safe to re-run; no-ops when the key already exists.
+  litellm-init:
+    image: ghcr.io/berriai/litellm:main-stable
+    depends_on:
+      litellm:
+        condition: service_healthy
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_LIBRECHAT_KEY: ${LITELLM_LIBRECHAT_KEY}
+    volumes:
+      - type: bind
+        source: ./docker/litellm/init-librechat-key.py
+        target: /app/init-librechat-key.py
+        read_only: true
+    entrypoint: ["python3", "/app/init-librechat-key.py"]
+    mem_limit: 512m
+
   # The actual AI backend Nexus Scheduler's Worker calls (REQUIREMENTS
   # §2.1) — a real local install, not a mock, so job runs actually work
   # end to end. Minimal footprint: LibreChat's own default Compose setup
@@ -233,6 +256,8 @@ services:
         condition: service_healthy
       litellm:
         condition: service_healthy
+      litellm-init:
+        condition: service_completed_successfully
     environment:
       HOST: 0.0.0.0
       PORT: 3080
@@ -256,8 +281,11 @@ services:
       # Custom (non-built-in) endpoints — the local LiteLLM gateway
       # above (which routes on to Ollama) — are defined in the
       # bind-mounted librechat.yaml below; it references this variable
-      # so the key never has to live in a committed file.
-      LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
+      # so the key never has to live in a committed file. This is the
+      # dedicated virtual key litellm-init provisions, NOT the master
+      # key: budgets/rate limits attach per virtual key, and the admin
+      # credential stays out of this container.
+      LITELLM_API_KEY: ${LITELLM_LIBRECHAT_KEY}
       CONFIG_PATH: /app/librechat.yaml
     volumes:
       - type: bind

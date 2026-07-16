@@ -197,9 +197,13 @@ ANTHROPIC_API_KEY=
 
 **Adding LiteLLM to an existing `.env`**: re-run
 `./scripts/generate-local-env.sh` — it appends freshly generated
-`LITELLM_MASTER_KEY`/`LITELLM_SALT_KEY`/`LITELLM_POSTGRES_PASSWORD`
-lines to an existing `.env` that predates the LiteLLM gateway, without
-touching any existing values.
+`LITELLM_MASTER_KEY`/`LITELLM_SALT_KEY`/`LITELLM_POSTGRES_PASSWORD`/
+`LITELLM_LIBRECHAT_KEY` lines to an existing `.env` that predates the
+LiteLLM gateway, without touching any existing values. LibreChat
+authenticates to the gateway with the `LITELLM_LIBRECHAT_KEY` virtual
+key (provisioned automatically by the `litellm-init` service); the
+master key is the admin credential — use it for the `:4000/ui`
+dashboard and to attach budgets/rate limits to the LibreChat key.
 
 </details>
 

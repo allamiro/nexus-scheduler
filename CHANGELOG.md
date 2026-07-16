@@ -16,7 +16,10 @@ packages, so there's no per-package versioning here (see `scripts/release.mjs`).
   LibreChat and Ollama: every model call is metered at the gateway
   (per-key spend, hard budgets, RPM/TPM rate limits, admin dashboard
   at `:4000/ui`) — the authoritative usage data LibreChat's Agents API
-  doesn't provide (#38, #102). The bundled local models switch from
+  doesn't provide (#38, #102). LibreChat authenticates with a
+  dedicated, auto-provisioned virtual key rather than the gateway's
+  admin master key, so budget/rate ceilings actually bind to its
+  traffic. The bundled local models switch from
   `qwen3:0.6b` to a small CPU-friendly set — `gemma3:1b` (default
   chat), `codegemma:2b` (coding), `phi4-mini-reasoning:3.8b`
   (reasoning) — loaded one at a time (`OLLAMA_MAX_LOADED_MODELS=1`).

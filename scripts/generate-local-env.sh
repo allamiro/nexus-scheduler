@@ -22,14 +22,25 @@ if [ -f .env ]; then
 
 # LiteLLM model gateway (LibreChat -> LiteLLM -> Ollama) — appended by
 # scripts/generate-local-env.sh after this .env was first written. The
-# master key is both LibreChat's API key to the gateway and the admin
-# login for http://localhost:4000/ui; the salt key encrypts provider
-# credentials stored in LiteLLM's own Postgres.
+# master key is the gateway's admin credential (login for
+# http://localhost:4000/ui); LibreChat authenticates with the dedicated
+# virtual key, provisioned by the litellm-init service; the salt key
+# encrypts provider credentials stored in LiteLLM's own Postgres.
 LITELLM_MASTER_KEY=sk-$(random_hex 24)
 LITELLM_SALT_KEY=sk-$(random_hex 24)
 LITELLM_POSTGRES_PASSWORD=$(random_hex 24)
+LITELLM_LIBRECHAT_KEY=sk-$(random_hex 24)
 EOF
     echo "Appended freshly generated LiteLLM settings to the existing .env."
+  elif ! grep -q '^LITELLM_LIBRECHAT_KEY=' .env; then
+    cat >> .env <<EOF
+
+# Dedicated LiteLLM virtual key for LibreChat (appended by
+# scripts/generate-local-env.sh) — provisioned in the gateway by the
+# litellm-init service; the master key stays admin-only.
+LITELLM_LIBRECHAT_KEY=sk-$(random_hex 24)
+EOF
+    echo "Appended LITELLM_LIBRECHAT_KEY to the existing .env."
   fi
 else
   cat > .env <<EOF
@@ -63,12 +74,16 @@ LIBRECHAT_BASE_URL=http://librechat:3080
 
 # LiteLLM model gateway (LibreChat -> LiteLLM -> Ollama) — meters every
 # model call with per-key spend/budgets/rate limits. The master key is
-# both LibreChat's API key to the gateway and the admin login for
-# http://localhost:4000/ui; the salt key encrypts provider credentials
+# the gateway's admin credential (login for http://localhost:4000/ui);
+# LibreChat itself authenticates with the dedicated virtual key below,
+# provisioned by the litellm-init service — budgets and rate limits
+# attach to virtual keys, and the admin credential stays out of the
+# librechat container. The salt key encrypts provider credentials
 # stored in LiteLLM's own Postgres (litellm-postgres service).
 LITELLM_MASTER_KEY=sk-$(random_hex 24)
 LITELLM_SALT_KEY=sk-$(random_hex 24)
 LITELLM_POSTGRES_PASSWORD=$(random_hex 24)
+LITELLM_LIBRECHAT_KEY=sk-$(random_hex 24)
 
 # Claude/Anthropic as LibreChat's provider for local testing (optional
 # — leave blank and LibreChat just won't offer it as an endpoint). Get
