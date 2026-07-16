@@ -385,7 +385,7 @@
     {
       "type": "timeseries",
       "title": "Memory by container (top 10)",
-      "description": "Per-container working set. No container memory limits are set in this stack, so this is what explains Chromium/PDF and model-load failures. name!=\"\" keeps this to real containers \u2014 cAdvisor also reports host cgroups (/system.slice etc.) which would otherwise dominate the topk. Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault.",
+      "description": "Per-container working set. No container memory limits are set in this stack, so this is what explains Chromium/PDF and model-load failures. name!=\"\" keeps this to real containers \u2014 cAdvisor also reports host cgroups (/system.slice etc.) which would otherwise dominate the topk. On Docker Desktop (macOS/Windows), cAdvisor cannot see the VM's cgroups \u2014 start the container-stats-exporter fallback instead: docker compose --profile docker-desktop up -d. It emits the same metric names from the Docker Engine API, so this panel populates either way.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -436,12 +436,12 @@
           "legendFormat": "{{name}}"
         }
       ],
-      "description": " Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault."
+      "description": " On Docker Desktop (macOS/Windows), cAdvisor cannot see the VM's cgroups \u2014 start the container-stats-exporter fallback instead: docker compose --profile docker-desktop up -d. It emits the same metric names from the Docker Engine API, so this panel populates either way."
     },
     {
       "type": "timeseries",
       "title": "OOM kills",
-      "description": "Requires Alloy to read /dev/kmsg \u2014 see the devices: entry in docker-compose.observability.yml. Any non-zero value means a container was killed for memory. Note: per-container cgroup data requires a Linux Docker host; on Docker Desktop (macOS/Windows) the VM's cgroups aren't visible through the bind mounts, so this panel is empty there \u2014 not a collection fault.",
+      "description": "Requires Alloy to read /dev/kmsg \u2014 see the devices: entry in docker-compose.observability.yml. Any non-zero value means a container was killed for memory. Note: OOM-kill events come only from cAdvisor (kernel log) \u2014 the Docker Desktop fallback exporter does not report them.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
