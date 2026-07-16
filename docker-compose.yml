@@ -217,7 +217,11 @@ services:
       - "4000:4000"
     mem_limit: 1g
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"]
+      # /health/readiness (not /health/liveliness): readiness includes
+      # the DB connection, and litellm-init + LibreChat gate on this
+      # healthcheck precisely because they need the DB-backed key
+      # endpoints — liveness alone races LiteLLM's DB initialization.
+      test: ["CMD", "python3", "-c", "import json,sys,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:4000/health/readiness')); sys.exit(0 if r.get('status')=='healthy' and r.get('db')=='connected' else 1)"]
       interval: 10s
       timeout: 5s
       retries: 10
