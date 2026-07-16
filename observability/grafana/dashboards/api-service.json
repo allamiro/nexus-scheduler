@@ -48,11 +48,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status_code) (rate(nexus_scheduler_http_request_duration_seconds_count[5m]))",
+          "expr": "sum by (status_code) (rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\"}[5m]))",
           "legendFormat": "{{status_code}}"
         }
       ],
-      "description": "Rate. Labelled by matched route pattern rather than raw URL, so ids do not explode cardinality."
+      "description": "Rate. Labelled by matched route pattern rather than raw URL, so ids do not explode cardinality. Scrape and health endpoints are excluded: Alloy polls /metrics every 15s, which on an idle deployment is *all* the traffic \u2014 it would top the route panels and dilute every ratio here."
     },
     {
       "type": "stat",
@@ -93,11 +93,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(nexus_scheduler_http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(nexus_scheduler_http_request_duration_seconds_count[5m])), 0.0001)",
+          "expr": "sum(rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\",status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\"}[5m])), 0.0001)",
           "legendFormat": "5xx ratio"
         }
       ],
-      "description": "Errors. The SLO-shaped number: what share of requests are failing."
+      "description": "Errors. The SLO-shaped number: what share of requests are failing. Scrape and health endpoints are excluded: Alloy polls /metrics every 15s, which on an idle deployment is *all* the traffic \u2014 it would top the route panels and dilute every ratio here."
     },
     {
       "type": "timeseries",
@@ -121,21 +121,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(nexus_scheduler_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(nexus_scheduler_http_request_duration_seconds_bucket{route!~\"/metrics|/healthz|/readyz\"}[5m])))",
           "legendFormat": "p50"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(nexus_scheduler_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nexus_scheduler_http_request_duration_seconds_bucket{route!~\"/metrics|/healthz|/readyz\"}[5m])))",
           "legendFormat": "p95"
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(nexus_scheduler_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(nexus_scheduler_http_request_duration_seconds_bucket{route!~\"/metrics|/healthz|/readyz\"}[5m])))",
           "legendFormat": "p99"
         }
       ],
-      "description": "Duration. Watch p99 against p50: a widening gap is queueing, not slow handlers."
+      "description": "Duration. Watch p99 against p50: a widening gap is queueing, not slow handlers. Scrape and health endpoints are excluded: Alloy polls /metrics every 15s, which on an idle deployment is *all* the traffic \u2014 it would top the route panels and dilute every ratio here."
     },
     {
       "type": "timeseries",
@@ -159,7 +159,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(8, histogram_quantile(0.95, sum by (le, route) (rate(nexus_scheduler_http_request_duration_seconds_bucket[5m]))))",
+          "expr": "topk(8, histogram_quantile(0.95, sum by (le, route) (rate(nexus_scheduler_http_request_duration_seconds_bucket{route!~\"/metrics|/healthz|/readyz\"}[5m]))))",
           "legendFormat": "{{route}}"
         }
       ],
@@ -187,11 +187,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(8, sum by (route, method) (rate(nexus_scheduler_http_request_duration_seconds_count[5m])))",
+          "expr": "topk(8, sum by (route, method) (rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\"}[5m])))",
           "legendFormat": "{{method}} {{route}}"
         }
       ],
-      "description": "Traffic mix \u2014 pair with the panel to its left before optimising anything."
+      "description": "Traffic mix \u2014 pair with the panel to its left before optimising anything. Scrape and health endpoints are excluded: Alloy polls /metrics every 15s, which on an idle deployment is *all* the traffic \u2014 it would top the route panels and dilute every ratio here."
     },
     {
       "type": "timeseries",
@@ -215,7 +215,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(8, sum by (route, status_code) (rate(nexus_scheduler_http_request_duration_seconds_count{status_code=~\"4..\"}[5m])))",
+          "expr": "topk(8, sum by (route, status_code) (rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\",status_code=~\"4..\"}[5m])))",
           "legendFormat": "{{route}} {{status_code}}"
         }
       ],
@@ -243,7 +243,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(8, sum by (route) (rate(nexus_scheduler_http_request_duration_seconds_count{status_code=~\"5..\"}[5m])))",
+          "expr": "topk(8, sum by (route) (rate(nexus_scheduler_http_request_duration_seconds_count{route!~\"/metrics|/healthz|/readyz\",status_code=~\"5..\"}[5m])))",
           "legendFormat": "{{route}}"
         }
       ],
