@@ -1,0 +1,27 @@
+# Datasources provisioned as code (#103) — no click-ops.
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    type: prometheus
+    uid: mimir
+    access: proxy
+    # Mimir's Prometheus-compatible query API.
+    url: http://mimir:9009/prometheus
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      # Lets metric panels jump straight to the matching logs.
+      exemplarTraceIdDestinations: []
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # Correlate a log line to the audit trail / future traces by request id.
+      derivedFields:
+        - name: requestId
+          matcherRegex: '"requestId":"([^"]+)"'
+          url: '$${__value.raw}'

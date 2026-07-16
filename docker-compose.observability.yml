@@ -1,0 +1,97 @@
+# Observability stack (issue #103), Grafana-suite only:
+#   Alloy   — single collector: scrapes /metrics, tails container logs
+#   Mimir   — metrics backend (Prometheus-compatible), monolithic mode
+#   Loki    — logs backend, single-binary mode
+#   Grafana — dashboards + alerting, provisioned as code
+#
+# Bring it up alongside the app so Alloy can reach the services by name:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# Tempo (traces) and Pyroscope (profiles) are intentionally NOT here yet:
+# the app has no OpenTelemetry instrumentation, so those backends would
+# stand up and receive nothing. They land with Phase 2/3 of #103.
+services:
+  # No healthcheck on mimir/loki: both images are distroless — they have no
+  # shell and no wget/curl, so a CMD-SHELL probe can never pass and would
+  # just mark them permanently unhealthy. Alloy and Grafana both retry their
+  # connections, so strict start ordering isn't needed. (Mimir's ingester
+  # ring takes ~40s to form before /ready returns 200.)
+  mimir:
+    image: grafana/mimir:latest
+    command: ["-config.file=/etc/mimir/mimir.yaml"]
+    volumes:
+      - ./observability/mimir/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      - mimir-data:/data
+
+  loki:
+    image: grafana/loki:latest
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.7.5
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      # Read by config.alloy's built-in postgres/redis exporters — same
+      # values the app services already use from .env.
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    # cAdvisor reads OOM-kill events from /dev/kmsg. With kernel.dmesg_restrict=1
+    # (the default on most distros) that read needs CAP_SYSLOG — and the
+    # capability is only effective for a root process, while the Alloy image
+    # runs as a non-root user. Without both of these the mount alone yields
+    # "operation not permitted" and OOM events are silently dropped.
+    # Note: this container already mounts the Docker socket, which is
+    # root-equivalent, so running as root here adds little marginal risk.
+    user: root
+    cap_add:
+      - SYSLOG
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Container discovery + log tailing for every service in the stack.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    devices:
+      # cAdvisor reads OOM-kill events from the kernel log. This must be a
+      # `devices:` entry, not a volume mount: bind-mounting the device node
+      # still leaves it blocked by the container's device cgroup ("operation
+      # not permitted"), no matter what capabilities are granted.
+      - /dev/kmsg:/dev/kmsg:r
+    depends_on:
+      - mimir
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      # Dev-only convenience: anonymous admin so the stack is usable
+      # immediately. Never do this outside a local dev compose.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # 3300 on the host: 3000 is taken by the api and 3001 is the worker's
+      # health/metrics port.
+      - "3300:3000"
+    depends_on:
+      - mimir
+      - loki
+
+volumes:
+  mimir-data:
+  loki-data:
+  alloy-data:
+  grafana-data:

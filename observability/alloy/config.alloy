@@ -1,0 +1,141 @@
+// Grafana Alloy — the single collector for the whole deployment (#103).
+// Metrics -> Mimir, logs -> Loki. Infra metrics come from Alloy's own
+// built-in exporters, so no per-service exporter containers are needed.
+
+logging {
+  level = "warn"
+}
+
+// ---------------------------------------------------------------------------
+// Metrics -> Mimir
+// ---------------------------------------------------------------------------
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir:9009/api/v1/push"
+  }
+}
+
+// The app already exposes Prometheus-format /metrics on each service.
+// (Prometheus is the exposition format here, not a server — Mimir stores it.)
+prometheus.scrape "app" {
+  targets = [
+    { __address__ = "api:3000", service = "api" },
+    { __address__ = "worker:3001", service = "worker" },
+    { __address__ = "pdf-service:4100", service = "pdf-service" },
+  ]
+  metrics_path    = "/metrics"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
+// Per-container CPU/memory/OOM-kills. No container memory limits are set
+// anywhere in this stack, so this is what explains Chromium/PDF and
+// Ollama model-load failures.
+prometheus.exporter.cadvisor "containers" {
+  docker_host      = "unix:///var/run/docker.sock"
+  storage_duration = "5m"
+}
+
+prometheus.scrape "cadvisor" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
+// Redis backs BullMQ — the entire scheduler/queue. Memory pressure and
+// evictions here mean silently lost runs, so it's a first-class signal.
+prometheus.exporter.redis "redis" {
+  redis_addr     = "redis:6379"
+  redis_password = sys.env("REDIS_PASSWORD")
+}
+
+prometheus.scrape "redis" {
+  targets         = prometheus.exporter.redis.redis.targets
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
+// Postgres is the system of record (runs, schedules, audit trail).
+prometheus.exporter.postgres "postgres" {
+  data_source_names = [
+    "postgresql://" + sys.env("POSTGRES_USER") + ":" + sys.env("POSTGRES_PASSWORD") + "@postgres:5432/" + sys.env("POSTGRES_DB") + "?sslmode=disable",
+  ]
+}
+
+prometheus.scrape "postgres" {
+  targets         = prometheus.exporter.postgres.postgres.targets
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Logs -> Loki (every container in the deployment, not just the app)
+// ---------------------------------------------------------------------------
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  // Container name -> a clean `service` label (drop Docker's leading "/").
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/?(.*)"
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.pino.receiver]
+}
+
+// api/worker/pdf-service log structured JSON (pino). Extract level and the
+// request id so logs join the audit trail (and future traces) on `requestId`.
+//
+// The parsing is scoped with stage.match to only those services: applied
+// globally, the template below renders the literal string "<no value>" for
+// every non-JSON line (Postgres, nginx, Ollama, Alloy itself), which both
+// pollutes the `level` label and breaks `level=~"error|fatal"` queries.
+// Other services' logs pass through untouched and keep their own labels.
+loki.process "pino" {
+  stage.match {
+    selector = "{service=~\".*-(api|worker|pdf-service)-.*\"}"
+
+    stage.json {
+      expressions = {
+        level     = "level",
+        requestId = "requestId",
+      }
+    }
+
+    // pino emits numeric levels by default (30=info, 40=warn, 50=error);
+    // map them to names so `level` is human-queryable in Grafana. The
+    // `if .Value` guard keeps a missing level from becoming "<no value>".
+    stage.template {
+      source   = "level"
+      template = "{{ if .Value }}{{ if eq .Value \"10\" }}trace{{ else if eq .Value \"20\" }}debug{{ else if eq .Value \"30\" }}info{{ else if eq .Value \"40\" }}warn{{ else if eq .Value \"50\" }}error{{ else if eq .Value \"60\" }}fatal{{ else }}{{ .Value }}{{ end }}{{ end }}"
+    }
+
+    stage.labels {
+      values = {
+        level = "",
+      }
+    }
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
