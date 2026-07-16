@@ -8,6 +8,7 @@ import { createRunProcessor } from "./processor.js";
 import { startHealthServer } from "./health.js";
 import { createMetrics } from "./metrics.js";
 import { startUsageReportLoop } from "./usageReportScheduler.js";
+import { startCancellationSubscriber } from "./cancellation.js";
 
 async function main() {
   const config = loadConfig();
@@ -33,6 +34,8 @@ async function main() {
     logger.error({ runId: job?.data.runId, err }, "run job failed permanently");
   });
 
+  const stopCancellationSubscriber = await startCancellationSubscriber(await runWorker.client, logger);
+
   logger.info("nexus-scheduler worker started");
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
@@ -40,6 +43,7 @@ async function main() {
       void (async () => {
         logger.info({ signal }, "shutting down worker");
         clearInterval(usageReportInterval);
+        await stopCancellationSubscriber();
         await runWorker.close();
         await queue.close();
         process.exit(0);

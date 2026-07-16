@@ -48,6 +48,17 @@ packages, so there's no per-package versioning here (see `scripts/release.mjs`).
   permanently added a new, never-retired time series. Unmatched (404)
   requests had the same problem via the raw request path. Both now
   label with the bounded pattern / a constant instead (#108).
+- Runs can now actually be cancelled. `CANCELLED` has been a reachable
+  status in the schema for a while, and everything downstream already
+  handled it (terminal-state guards, `notifyOnCancelled` on webhook
+  destinations), but nothing ever set it and no endpoint accepted a
+  cancel request — an operator could enable "notify me on cancellation"
+  and it would silently never fire. Adds `POST /api/runs/:id/cancel`
+  and a Cancel button in Run History: a still-queued run is stopped
+  before it ever reaches the agent, an in-flight one has its LibreChat
+  request aborted immediately rather than left to run to completion or
+  time out, and either way the same webhook/email delivery a completed
+  or failed run gets now fires for it too (#111).
 
 ## [0.1.7] - 2026-07-14
 

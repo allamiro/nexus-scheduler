@@ -425,8 +425,11 @@ A run moves through \`PENDING\` → \`RUNNING\` → a terminal state:
 
 ## Cancelling
 
-A running job can be cancelled by its owner or an admin — the in-flight
-request to LibreChat is aborted and the run is marked \`CANCELLED\`.
+A \`PENDING\` or \`RUNNING\` run can be cancelled by anyone with EDIT access
+to its Project — the same access Run Now itself requires. A queued run is
+stopped before it ever reaches the agent; an in-flight one has its request
+to LibreChat aborted. Either way it's marked \`CANCELLED\`, which fires the
+same webhook/notification delivery a completed or failed run would.
 
 ## PDF export
 

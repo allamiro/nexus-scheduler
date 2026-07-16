@@ -9,6 +9,7 @@ import { deliverWebhooksForRun } from "./webhookDelivery.js";
 import { sendRunNotificationEmail } from "./notifications.js";
 import { recordAuditEvent } from "./audit.js";
 import { tryAcquireUserSlot, releaseUserSlot } from "./concurrency.js";
+import { isCancelRequested, clearCancelRequest, registerActiveRun, unregisterActiveRun } from "./cancellation.js";
 import type { Logger } from "./logger.js";
 import type { WorkerConfig } from "./config.js";
 import type { Metrics } from "./metrics.js";
@@ -66,6 +67,50 @@ async function deliverTerminalSideEffects(
   }
 }
 
+// Single writer of the CANCELLED terminal state (issue #111), called
+// from both places a cancellation can be discovered: before the agent
+// was ever called (still queued/delayed) and after an in-flight call
+// was aborted mid-flight. Mirrors the SUCCESS/FAILED terminal handling
+// below — same metric, audit event, and webhook/notification delivery
+// (notifyOnCancelled is the entire reason this exists) — just its own
+// status and a fixed message instead of the agent's own error.
+async function markRunCancelled(
+  runId: string,
+  jobName: string,
+  jobId: string,
+  startedAt: Date | null,
+  stopRunTimer: ReturnType<Metrics["runDuration"]["startTimer"]>,
+  config: WorkerConfig,
+  logger: Logger,
+  metrics: Metrics,
+): Promise<void> {
+  metrics.runsTotal.inc({ status: "cancelled" });
+  stopRunTimer({ status: "cancelled" });
+  await prisma.run.update({
+    where: { id: runId },
+    data: {
+      status: "CANCELLED",
+      startedAt: startedAt ?? undefined,
+      completedAt: new Date(),
+      errorMessage: "Cancelled by user request",
+    },
+  });
+  await recordAuditEvent({
+    actorType: "SERVICE",
+    actorId: "system:scheduler",
+    actorEmail: "system:scheduler",
+    action: "run.complete",
+    targetType: "run",
+    targetId: runId,
+    targetName: jobName,
+    category: "lifecycle",
+    result: "SUCCESS",
+    correlationId: runId,
+    details: { status: "CANCELLED" },
+  });
+  await deliverTerminalSideEffects(runId, jobId, config, logger);
+}
+
 async function processRun(
   bullJob: BullJob<RunJobData>,
   token: string | undefined,
@@ -102,6 +147,30 @@ async function processRun(
     return;
   }
 
+  const redisClient = await worker.client;
+
+  // A Run cancelled while still queued/delayed (never yet reached this
+  // point before) — checked before doing any of the real work below
+  // (concurrency slot, prompt rendering, decrypting the API key) so a
+  // cancelled Run never actually calls the agent (issue #111). A Run
+  // cancelled *during* the agent call is handled separately, further
+  // down, since by then this check has already passed.
+  if (await isCancelRequested(redisClient, runId)) {
+    await clearCancelRequest(redisClient, runId);
+    logger.info({ runId }, "run cancelled before it started");
+    await markRunCancelled(
+      runId,
+      run.job.name,
+      run.jobId,
+      run.startedAt,
+      metrics.runDuration.startTimer(),
+      config,
+      logger,
+      metrics,
+    );
+    return;
+  }
+
   // Per-user concurrency limiting (§2.1) — attributed to the Job's
   // owner, the only "user" identity available on every Run regardless
   // of trigger type (scheduled or manual). A throttled run is delayed
@@ -112,7 +181,6 @@ async function processRun(
   // that never releases its slot self-heals instead of permanently
   // shrinking that user's effective limit.
   const userId = run.job.createdById;
-  const redisClient = await worker.client;
   const slotTtlMs = run.job.timeoutSeconds * 1000 + 5 * 60_000;
   const acquired = await tryAcquireUserSlot(
     redisClient,
@@ -166,28 +234,52 @@ async function processRun(
 
       const apiKey = decryptSecret(run.job.apiKey.encryptedKey, config.API_KEY_ENCRYPTION_KEY);
 
+      // Re-checked here (not just once, above) to close most of the gap
+      // between "not cancelled yet" and "now listening for a live
+      // cancel" below — a cancellation landing in that narrow window
+      // would otherwise go unnoticed until this call finishes on its
+      // own. registerActiveRun immediately after is what a cancel
+      // arriving *during* the call itself aborts (issue #111).
+      if (await isCancelRequested(redisClient, runId)) {
+        await clearCancelRequest(redisClient, runId);
+        throw new LibreChatError("run cancelled before the agent call started", 0, false, "cancelled");
+      }
+      const cancelController = registerActiveRun(runId);
+
       const stopLibrechatTimer = metrics.librechatCallDuration.startTimer();
       let response;
       try {
-        response = await callAgent(run.job.agentId, renderedPrompt, apiKey, {
-          baseUrl: config.LIBRECHAT_BASE_URL,
-          timeoutMs: run.job.timeoutSeconds * 1000,
-        });
-        // Labels are only known once the response is in hand: which model
-        // served this is decided by the Agent inside LibreChat, not by us.
-        // That is why the timer is stopped here and in the catch rather than
-        // in a finally — a finally runs before either fact is available.
-        stopLibrechatTimer({ model: response.model ?? UNKNOWN_MODEL, outcome: "success" });
-      } catch (err) {
-        // A failed call never reports a model, so attributing the failure to
-        // one would be a guess. `unknown` is the honest label, and it keeps
-        // failures from silently vanishing out of the latency histogram —
-        // dropping them would make a model that always times out look like a
-        // model with no traffic.
-        const kind = err instanceof LibreChatError ? err.kind : "network_error";
-        stopLibrechatTimer({ model: UNKNOWN_MODEL, outcome: kind });
-        metrics.librechatErrorsTotal.inc({ kind, model: UNKNOWN_MODEL });
-        throw err;
+        try {
+          response = await callAgent(run.job.agentId, renderedPrompt, apiKey, {
+            baseUrl: config.LIBRECHAT_BASE_URL,
+            timeoutMs: run.job.timeoutSeconds * 1000,
+            abortSignal: cancelController.signal,
+          });
+          // Labels are only known once the response is in hand: which model
+          // served this is decided by the Agent inside LibreChat, not by us.
+          // That is why the timer is stopped here and in the catch rather
+          // than in a finally — a finally runs before either fact is
+          // available.
+          stopLibrechatTimer({ model: response.model ?? UNKNOWN_MODEL, outcome: "success" });
+        } catch (err) {
+          // A failed call never reports a model, so attributing the failure to
+          // one would be a guess. `unknown` is the honest label, and it keeps
+          // failures from silently vanishing out of the latency histogram —
+          // dropping them would make a model that always times out look like a
+          // model with no traffic.
+          const kind = err instanceof LibreChatError ? err.kind : "network_error";
+          stopLibrechatTimer({ model: UNKNOWN_MODEL, outcome: kind });
+          metrics.librechatErrorsTotal.inc({ kind, model: UNKNOWN_MODEL });
+          throw err;
+        }
+      } finally {
+        unregisterActiveRun(runId);
+        // Idempotent: a durable request only ever reaches here when the
+        // live pub/sub abort fired without going through either
+        // isCancelRequested check above — clear it so it doesn't outlive
+        // the Run it named. A no-op the vast majority of the time (no
+        // cancellation happened at all).
+        await clearCancelRequest(redisClient, runId);
       }
 
       const responseChoice = response.choices[0];
@@ -271,6 +363,16 @@ async function processRun(
 
       await deliverTerminalSideEffects(runId, run.jobId, config, logger);
     } catch (err) {
+      // Checked first, ahead of the generic transient/retry handling
+      // below: a cancellation is deliberately never retried regardless
+      // of attempt count, and must land as CANCELLED, not FAILED
+      // (issue #111).
+      if (err instanceof LibreChatError && err.kind === "cancelled") {
+        logger.info({ runId }, "run cancelled mid-flight");
+        await markRunCancelled(runId, run.job.name, run.jobId, run.startedAt, stopRunTimer, config, logger, metrics);
+        return; // swallow — BullMQ marks the job completed, not failed/retried
+      }
+
       const transient = err instanceof LibreChatError ? err.transient : true;
       const errorMessage = err instanceof Error ? err.message : "unknown error";
 

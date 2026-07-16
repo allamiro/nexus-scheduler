@@ -1,6 +1,12 @@
 import { Router } from "express";
 import type { Queue } from "bullmq";
-import { type RunJobData, requestRunReportPdf } from "@nexus-scheduler/shared";
+import type { Redis } from "ioredis";
+import {
+  type RunJobData,
+  requestRunReportPdf,
+  RUN_CANCEL_CHANNEL,
+  RUN_CANCEL_REQUESTED_KEY,
+} from "@nexus-scheduler/shared";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireJobAccess } from "../middleware/requireJobAccess.js";
@@ -69,14 +75,60 @@ export function createJobRunsRouter(queue: Queue<RunJobData>): Router {
   return router;
 }
 
-// Mounted at /api/runs — run-id-scoped read access. Access is entirely
-// inherited from the Run's Job's Project (requireRunAccess).
-export function createRunsRouter(config: AppConfig): Router {
+// Mounted at /api/runs — run-id-scoped access. Read routes inherit
+// access entirely from the Run's Job's Project (requireRunAccess);
+// cancel additionally requires EDIT, the same level "Run Now" needs to
+// trigger one in the first place.
+export function createRunsRouter(config: AppConfig, redisClient: Redis): Router {
   const router = Router();
 
   router.get("/:id", requireAuth, requireRunAccess("READ"), asyncHandler(async (req, res) => {
     const run = await prisma.run.findUnique({ where: { id: req.params.id } });
     res.json(run);
+  }));
+
+  // Cancellation (issue #111): the API never writes a Run's terminal
+  // state itself — the Worker is the sole owner of that (same reason it
+  // owns every other Run status transition) — this only records the
+  // request. RUN_CANCEL_REQUESTED_KEY is durable, so a Run still queued
+  // is caught the moment some worker replica picks it up; the
+  // RUN_CANCEL_CHANNEL publish is a best-effort nudge for a Run that
+  // happens to be mid-flight on LibreChat *right now*, so it aborts
+  // immediately instead of running to completion or timeout first. Both
+  // are harmless no-ops if neither condition currently applies.
+  router.post("/:id/cancel", requireAuth, requireRunAccess("EDIT"), asyncHandler(async (req, res) => {
+    const user = req.session.user!;
+    const run = await prisma.run.findUnique({
+      where: { id: req.params.id },
+      include: { job: { select: { name: true } } },
+    });
+    if (!run) {
+      res.status(404).json({ error: "run not found" });
+      return;
+    }
+    if (run.status === "SUCCESS" || run.status === "FAILED" || run.status === "CANCELLED" || run.status === "SKIPPED") {
+      res.status(409).json({ error: `run is already ${run.status.toLowerCase()} and cannot be cancelled` });
+      return;
+    }
+
+    await redisClient.sadd(RUN_CANCEL_REQUESTED_KEY, run.id);
+    await redisClient.publish(RUN_CANCEL_CHANNEL, run.id);
+
+    await recordAuditEvent({
+      req,
+      actorType: "USER",
+      actorId: user.id,
+      actorEmail: user.email,
+      action: "run.cancel_request",
+      targetType: "run",
+      targetId: run.id,
+      targetName: run.job.name,
+      category: "lifecycle",
+      result: "SUCCESS",
+      details: { previousStatus: run.status },
+    });
+
+    res.status(202).json({ status: "cancellation_requested" });
   }));
 
   // On-demand PDF download (§2.5) — rendered fresh from already-persisted

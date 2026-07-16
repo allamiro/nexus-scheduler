@@ -110,7 +110,7 @@ export function createApp(config: AppConfig, logger: Logger): Express {
   app.use("/api/jobs/:jobId/runs", createJobRunsRouter(runsQueue));
   app.use("/api/jobs", createJobsRouter());
   app.use("/api/schedules", createSchedulesRouter());
-  app.use("/api/runs", createRunsRouter(config));
+  app.use("/api/runs", createRunsRouter(config, redisClient));
   app.use("/api/dashboard", createDashboardRouter());
   app.use("/api/users", createUsersRouter(config, logger));
   app.use("/api/classification-labels", createClassificationLabelsRouter());

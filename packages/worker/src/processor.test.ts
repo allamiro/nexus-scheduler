@@ -1,7 +1,7 @@
 import http, { type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Queue, Worker } from "bullmq";
-import { encryptSecret } from "@nexus-scheduler/shared";
+import { encryptSecret, RUN_CANCEL_CHANNEL, RUN_CANCEL_REQUESTED_KEY } from "@nexus-scheduler/shared";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkerConfig } from "./config.js";
 import { prisma } from "./db.js";
@@ -10,6 +10,16 @@ import { createMetrics, type Metrics } from "./metrics.js";
 import { createRunProcessor } from "./processor.js";
 import { createRunsQueue, type RunJobData } from "./queue.js";
 import { parseRedisConnectionOptions } from "./redisConnection.js";
+import { startCancellationSubscriber } from "./cancellation.js";
+
+// Same cast-through-the-narrow-BullMQ-type pattern concurrency.ts/
+// cancellation.ts use — the runtime object really is a full ioredis
+// instance, so this stands in for what the API does with its own
+// (separately-dependency'd) ioredis instance in production.
+interface RawTestClient {
+  sadd(key: string, member: string): Promise<number>;
+  publish(channel: string, message: string): Promise<number>;
+}
 
 // Real Redis + real Postgres + a real in-process HTTP server standing in
 // for LibreChat's Agents API — same "no mocking the system under test"
@@ -264,5 +274,82 @@ describe("processRun (via createRunProcessor)", () => {
       `nexus:concurrency:user:${user.id}`,
     );
     expect(remaining).toBe(0);
+  });
+
+  // Regression tests for issue #111: CANCELLED existed in the schema and
+  // every downstream consumer already handled it, but nothing could ever
+  // set it. Both of the ways a Run can be cancelled per the design in
+  // cancellation.ts are exercised end to end (real Redis, no mocking).
+
+  it("cancels a run before it ever calls the agent, when cancellation was requested while still queued", async () => {
+    const { server, baseUrl, callCount } = await listenLibreChat(() => ({
+      status: 200,
+      body: { choices: [{ message: { content: "should never be seen" }, finish_reason: "stop" }] },
+    }));
+    libreChatServer = server;
+    const { job } = await makeFixture(baseUrl);
+    const run = await makeRun(job.id);
+
+    worker = createRunProcessor(connection, { ...config, LIBRECHAT_BASE_URL: baseUrl }, logger, metrics);
+    const raw = (await worker.client) as unknown as RawTestClient;
+    // Simulates what the API's POST /api/runs/:id/cancel does — recorded
+    // before the job is even enqueued, exactly like a cancel request
+    // arriving while a Run is still sitting in the queue.
+    await raw.sadd(RUN_CANCEL_REQUESTED_KEY, run.id);
+
+    const bullJob = await queue.add("run", { runId: run.id } satisfies RunJobData, { attempts: 1 });
+    const outcome = await waitForJobOutcome(worker, bullJob.id!);
+
+    expect(outcome).toBe("completed"); // not failed/retried — cancellation is terminal, not an error
+    expect(callCount()).toBe(0); // the agent was never called
+    const updated = await prisma.run.findUniqueOrThrow({ where: { id: run.id } });
+    expect(updated.status).toBe("CANCELLED");
+    expect(updated.errorMessage).toMatch(/cancelled/i);
+
+    const events = await prisma.auditEvent.findMany({ where: { correlationId: run.id, action: "run.complete" } });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.result).toBe("SUCCESS");
+  });
+
+  it("aborts an in-flight agent call when cancellation is requested while it's running", async () => {
+    let onRequestReceived: (() => void) | undefined;
+    const requestReceived = new Promise<void>((resolve) => {
+      onRequestReceived = resolve;
+    });
+    // Deliberately never responds — the point is to hold the connection
+    // open long enough to prove the client aborts it client-side rather
+    // than waiting for a server response or its own timeout.
+    const server = http.createServer((req) => {
+      req.resume();
+      onRequestReceived?.();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    libreChatServer = server;
+    const { port } = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const { job } = await makeFixture(baseUrl);
+    const run = await makeRun(job.id);
+
+    worker = createRunProcessor(connection, { ...config, LIBRECHAT_BASE_URL: baseUrl }, logger, metrics);
+    const stopSubscriber = await startCancellationSubscriber(await worker.client, logger);
+    try {
+      const bullJob = await queue.add("run", { runId: run.id } satisfies RunJobData, { attempts: 1 });
+      const outcomePromise = waitForJobOutcome(worker, bullJob.id!);
+
+      // Only resolves once processRun's fetch has actually reached the
+      // server — i.e. strictly after registerActiveRun has already run,
+      // so this publish is guaranteed to find a live controller waiting.
+      await requestReceived;
+      const raw = (await worker.client) as unknown as RawTestClient;
+      await raw.publish(RUN_CANCEL_CHANNEL, run.id);
+
+      const outcome = await outcomePromise;
+      expect(outcome).toBe("completed");
+      const updated = await prisma.run.findUniqueOrThrow({ where: { id: run.id } });
+      expect(updated.status).toBe("CANCELLED");
+    } finally {
+      await stopSubscriber();
+    }
   });
 });
