@@ -22,6 +22,10 @@ prometheus.scrape "app" {
     { __address__ = "api:3000", service = "api" },
     { __address__ = "worker:3001", service = "worker" },
     { __address__ = "pdf-service:4100", service = "pdf-service" },
+    // The LiteLLM gateway's meter, via the litellm-exporter bridge
+    // (OSS LiteLLM has no /metrics of its own). Exports
+    // litellm_gateway_up 0 when the stack runs without the gateway.
+    { __address__ = "litellm-exporter:9099", service = "litellm-gateway" },
   ]
   metrics_path    = "/metrics"
   scrape_interval = "15s"

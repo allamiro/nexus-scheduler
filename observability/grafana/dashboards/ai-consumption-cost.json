@@ -27,7 +27,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Tokens: live.** `nexus_scheduler_run_tokens_total{model,type}` is populated from the usage LibreChat reports, labelled by the model that actually served the call.\n\n**Cost: not yet trustworthy.** Two independent reasons:\n\n1. **Cost rates** must be configured per agent, or `computeCost` returns null and nothing is counted.\n2. **#102 \u2014 LiteLLM as the gateway.** LibreChat's Agents API returns an **all-zero usage object** (#38) for headless API-key calls, so token counts are frequently `null` at the source. Tokens are recorded only when usage is actually reported \u2014 a zero would read as \"this run was free\" rather than \"we were never told\".\n\nUntil both land, spend panels stay empty **by design** rather than showing a confidently wrong number."
+        "content": "### What is and is not trustworthy here\n\n**Gateway series (litellm_gateway_*): live and authoritative.** The litellm-exporter bridge reads LiteLLM's spend log \u2014 every call LibreChat makes through the gateway is metered there per model and virtual key (#102), including the ones LibreChat itself reports as zero usage.\n\n**App-side tokens (nexus_scheduler_run_tokens_total): empty until #38 is fixed upstream.** LibreChat's Agents API returns an all-zero usage object for headless API-key calls, and the app deliberately records \"unmetered\" rather than a confidently wrong zero.\n\n**Cost: needs cost rates configured per agent** (computeCost returns null otherwise), and local Ollama models are genuinely $0 \u2014 flat zero spend with traffic is correct until a hosted model runs through the gateway."
       }
     },
     {
@@ -43,7 +43,7 @@
     {
       "type": "timeseries",
       "title": "Tokens/sec by type",
-      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
+      "description": "App-side series (nexus_scheduler_run_tokens_total) stay empty while LibreChat reports zero usage on headless calls (#38); the gateway series (litellm_gateway_tokens_total, via the litellm-exporter bridge) are the authoritative meter from LiteLLM's spend log (#102).",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -59,13 +59,22 @@
           "refId": "A",
           "expr": "sum by (type) (rate(nexus_scheduler_run_tokens_total[5m]))",
           "legendFormat": "{{type}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (type) (rate(litellm_gateway_tokens_total{key_alias!=\"(none)\"}[$__rate_interval]))",
+          "legendFormat": "gateway: {{type}}",
+          "refId": "B"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Tokens/sec by model",
-      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
+      "description": "Gateway series come from LiteLLM's spend log via litellm-exporter \u2014 authoritative per-model counts (#102). App-side series await LibreChat usage reporting (#38).",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -81,6 +90,15 @@
           "refId": "A",
           "expr": "sum by (model) (rate(nexus_scheduler_run_tokens_total[5m]))",
           "legendFormat": "{{model}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (model) (rate(litellm_gateway_tokens_total[$__rate_interval]))",
+          "legendFormat": "gateway: {{model}}",
+          "refId": "B"
         }
       ]
     },
@@ -120,6 +138,15 @@
           "refId": "A",
           "expr": "sum(increase(nexus_scheduler_run_cost_total[24h]))",
           "legendFormat": "spend"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(increase(litellm_gateway_spend_usd_total[24h])) or vector(0)",
+          "legendFormat": "gateway",
+          "refId": "B"
         }
       ]
     },
@@ -193,7 +220,7 @@
     {
       "type": "timeseries",
       "title": "LiteLLM spend by key/model",
-      "description": "LiteLLM's Prometheus /metrics endpoint is an enterprise feature \u2014 on the OSS proxy this panel stays empty (404 from /metrics, verified). Authoritative spend lives in LiteLLM's own Postgres and /spend/logs API, and per-model token counts come from nexus_scheduler_run_tokens_total once the app-side metrics (PR #110) are deployed.",
+      "description": "From the litellm-exporter bridge over LiteLLM's /spend/logs \u2014 works on the OSS proxy (its own Prometheus /metrics is enterprise-only). Local Ollama models cost $0, so a flat 0 with traffic is correct; hosted models (claude-sonnet) will show real spend.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -206,9 +233,22 @@
       },
       "targets": [
         {
-          "refId": "A",
-          "expr": "sum by (model) (rate(litellm_spend_metric_total[10m]))",
-          "legendFormat": "{{model}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (model) (rate(litellm_gateway_spend_usd_total[10m])) * 3600",
+          "legendFormat": "{{model}} $/h",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (key_alias) (rate(litellm_gateway_spend_usd_total[10m])) * 3600",
+          "legendFormat": "key: {{key_alias}} $/h",
+          "refId": "B"
         }
       ]
     },
@@ -235,6 +275,15 @@
           "refId": "A",
           "expr": "sum by (model) (increase(nexus_scheduler_run_tokens_total[1h])) / on() group_left() clamp_min(sum(increase(nexus_scheduler_runs_total{status=\"success\"}[1h])), 1)",
           "legendFormat": "{{model}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (model) (increase(litellm_gateway_tokens_total[1h])) / clamp_min(sum by (model) (increase(litellm_gateway_requests_total[1h])), 1)",
+          "legendFormat": "gateway: {{model}}",
+          "refId": "B"
         }
       ]
     }

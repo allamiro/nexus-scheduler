@@ -89,6 +89,22 @@ services:
       - mimir
       - loki
 
+  # Bridges the LiteLLM gateway's spend log (the authoritative token/
+  # spend meter, #102) into Prometheus — the OSS proxy has no /metrics
+  # of its own. No depends_on: on a stack without the gateway (pre-#102
+  # main) it simply exports litellm_gateway_up 0 instead of failing, so
+  # this overlay stays usable against either compose file. Reuses the
+  # litellm image purely for its python3 — the exporter is stdlib-only.
+  litellm-exporter:
+    image: ghcr.io/berriai/litellm-database:main-stable
+    entrypoint: ["python3", "/app/exporter.py"]
+    environment:
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+    volumes:
+      - ./observability/litellm-exporter/exporter.py:/app/exporter.py:ro
+    mem_limit: 256m
+
   grafana:
     image: grafana/grafana:latest
     environment:
