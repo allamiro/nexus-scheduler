@@ -34,12 +34,44 @@ prometheus.scrape "app" {
 prometheus.exporter.cadvisor "containers" {
   docker_host      = "unix:///var/run/docker.sock"
   storage_duration = "5m"
+
+  // Report containers only. cAdvisor otherwise walks the host's whole cgroup
+  // tree (/system.slice, /init.scope, ...), which is noise here and outranks
+  // real containers in the topk panels.
+  docker_only = true
+
+  // Only the Compose project label is needed (to scope the metrics below).
+  // The default converts every container label into a metric label, which is
+  // unbounded cardinality driven by whatever labels an image happens to set.
+  store_container_labels       = false
+  allowlisted_container_labels = ["com.docker.compose.project"]
 }
 
 prometheus.scrape "cadvisor" {
   targets         = prometheus.exporter.cadvisor.containers.targets
   scrape_interval = "30s"
-  forward_to      = [prometheus.remote_write.mimir.receiver]
+  forward_to      = [prometheus.relabel.cadvisor_project.receiver]
+}
+
+// The socket exposes every container on the daemon, not just this project's.
+// The log pipeline is filtered at discovery; metrics have no equivalent, so
+// they are filtered here instead — otherwise neighbouring workloads' names
+// and resource usage are retained in Mimir, and a busy neighbour hides the
+// Nexus services in the topk panels.
+prometheus.relabel "cadvisor_project" {
+  forward_to = [prometheus.remote_write.mimir.receiver]
+
+  rule {
+    source_labels = ["container_label_com_docker_compose_project"]
+    regex         = coalesce(sys.env("COMPOSE_PROJECT"), "nexus-scheduler")
+    action        = "keep"
+  }
+
+  // Its only job was that filter, and it carries one value on every series.
+  rule {
+    regex  = "container_label_com_docker_compose_project"
+    action = "labeldrop"
+  }
 }
 
 // Redis backs BullMQ — the entire scheduler/queue. Memory pressure and
