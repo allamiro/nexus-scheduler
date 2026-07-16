@@ -13,6 +13,13 @@ import type { Logger } from "./logger.js";
 import type { WorkerConfig } from "./config.js";
 import type { Metrics } from "./metrics.js";
 
+// A failed call reports no model, and not every deployment returns one on
+// success either. A fixed placeholder keeps those observations in the
+// histogram — dropping them would hide the worst cases, since a model that
+// always fails would simply have no series at all — while staying a single
+// bounded label value rather than a hole in the data.
+const UNKNOWN_MODEL = "unknown";
+
 // BullMQ's own `concurrency` option enforces the *global* ceiling
 // (§2.1); the per-user layer on top (concurrency.ts) needs a handle to
 // this same Worker's Redis connection, which only exists once the
@@ -115,11 +122,24 @@ async function processRun(
     slotTtlMs,
   );
   if (!acquired) {
+    // Without this, a throttled run is indistinguishable from a slow one: both
+    // simply take longer to start. This is what says the ceiling was hit.
+    metrics.runsThrottledTotal.inc({ scope: "user" });
     logger.info({ runId, userId }, "run throttled — per-user concurrency limit reached, delaying");
     await bullJob.moveToDelayed(Date.now() + 5000, token);
     throw new DelayedError();
   }
 
+  // Enqueue -> pickup, measured against BullMQ's own enqueue stamp. Observed
+  // once the slot is held, so a throttled job — re-delayed and re-entering
+  // here — contributes the whole wait, not just its last attempt. That is
+  // deliberate: this is the delay a user actually experiences before their run
+  // starts, and whether it came from a busy worker or a concurrency ceiling is
+  // not a distinction they can feel. runs_throttled_total attributes the cause;
+  // this measures the cost.
+  metrics.queueWait.observe((Date.now() - bullJob.timestamp) / 1000);
+
+  const stopRunTimer = metrics.runDuration.startTimer();
   try {
     await prisma.run.update({ where: { id: runId }, data: { status: "RUNNING", startedAt: new Date() } });
 
@@ -153,8 +173,21 @@ async function processRun(
           baseUrl: config.LIBRECHAT_BASE_URL,
           timeoutMs: run.job.timeoutSeconds * 1000,
         });
-      } finally {
-        stopLibrechatTimer();
+        // Labels are only known once the response is in hand: which model
+        // served this is decided by the Agent inside LibreChat, not by us.
+        // That is why the timer is stopped here and in the catch rather than
+        // in a finally — a finally runs before either fact is available.
+        stopLibrechatTimer({ model: response.model ?? UNKNOWN_MODEL, outcome: "success" });
+      } catch (err) {
+        // A failed call never reports a model, so attributing the failure to
+        // one would be a guess. `unknown` is the honest label, and it keeps
+        // failures from silently vanishing out of the latency histogram —
+        // dropping them would make a model that always times out look like a
+        // model with no traffic.
+        const kind = err instanceof LibreChatError ? err.kind : "network_error";
+        stopLibrechatTimer({ model: UNKNOWN_MODEL, outcome: kind });
+        metrics.librechatErrorsTotal.inc({ kind, model: UNKNOWN_MODEL });
+        throw err;
       }
 
       const responseChoice = response.choices[0];
@@ -193,6 +226,22 @@ async function processRun(
         ? await computeCost(run.job.agentId, tokenUsage.promptTokens, tokenUsage.completionTokens, new Date())
         : null;
 
+      // These are already computed and written to Postgres above; exposing
+      // them costs nothing and is the difference between a cost question that
+      // can be alerted on and one that needs a SQL query after the fact.
+      // Left unrecorded when usage is absent rather than counted as zero:
+      // LibreChat's Agents API returns all-zero usage for headless API-key
+      // calls (#38), and a zero would read as "this run was free" instead of
+      // "we were never told".
+      const servingModel = response.model ?? UNKNOWN_MODEL;
+      if (tokenUsage) {
+        metrics.runTokensTotal.inc({ model: servingModel, type: "prompt" }, tokenUsage.promptTokens);
+        metrics.runTokensTotal.inc({ model: servingModel, type: "completion" }, tokenUsage.completionTokens);
+      }
+      if (computedCost !== null) {
+        metrics.runCostTotal.inc({ model: servingModel }, Number(computedCost));
+      }
+
       await prisma.run.update({
         where: { id: runId },
         data: {
@@ -206,6 +255,7 @@ async function processRun(
       });
 
       metrics.runsTotal.inc({ status: "success" });
+      stopRunTimer({ status: "success" });
       await recordAuditEvent({
         actorType: "SERVICE",
         actorId: "system:scheduler",
@@ -226,6 +276,11 @@ async function processRun(
 
       if (!transient || isFinalAttempt) {
         metrics.runsTotal.inc({ status: "failed" });
+        // Only on the terminal attempt. Observing every failed attempt would
+        // fill the histogram with the duration of retries rather than the
+        // duration of runs, and make a heavily-retried run look like several
+        // fast failures.
+        stopRunTimer({ status: "failed" });
         await prisma.run.update({
           where: { id: runId },
           data: { status: "FAILED", completedAt: new Date(), errorMessage },

@@ -17,6 +17,13 @@ async function main() {
   const queue = createRunsQueue(connection);
   const metrics = createMetrics(queue);
 
+  // Published from config rather than hardcoded in a dashboard, so the ceiling
+  // drawn next to the throttle rate is the one this worker is actually
+  // enforcing — a dashboard constant would silently drift the day someone
+  // tunes the env var, which is exactly when the graph matters most.
+  metrics.concurrencyLimit.set({ scope: "global" }, config.GLOBAL_MAX_CONCURRENT_RUNS);
+  metrics.concurrencyLimit.set({ scope: "user" }, config.PER_USER_MAX_CONCURRENT_RUNS);
+
   startHealthServer(config, logger, metrics);
   startSchedulerLoop(queue, config, logger, metrics);
   const usageReportInterval = startUsageReportLoop(config, logger);
