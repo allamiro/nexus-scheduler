@@ -31,7 +31,12 @@ PORT = int(os.environ.get("PORT", "9099"))
 
 def fetch_spend_logs():
     req = urllib.request.Request(
-        LITELLM_URL + "/spend/logs",
+        # summarize=false pins the per-transaction row shape (completion_tokens
+        # et al). The bare endpoint already returns individual rows on the
+        # image this was verified against, but LiteLLM flips to summarized
+        # aggregate rows in some modes (e.g. date-filtered queries), so ask
+        # explicitly rather than depend on the default.
+        LITELLM_URL + "/spend/logs?summarize=false",
         headers={"Authorization": "Bearer " + MASTER_KEY},
     )
     with urllib.request.urlopen(req, timeout=15) as r:
