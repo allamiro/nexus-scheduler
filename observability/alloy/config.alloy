@@ -74,6 +74,40 @@ prometheus.relabel "cadvisor_project" {
   }
 }
 
+// The host itself. Every container on this box shares one kernel, one disk and
+// one CPU budget: a full disk stops Postgres and Mimir alike, and neither
+// cAdvisor nor the app can see that coming. Paths point at /rootfs because the
+// container's own /proc and /sys are namespaced views — reading them would
+// report the container, not the machine everything actually runs on.
+prometheus.exporter.unix "host" {
+  rootfs_path = "/rootfs"
+  procfs_path = "/rootfs/proc"
+  sysfs_path  = "/rootfs/sys"
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
+// The observability stack watching itself. Without this the pipeline fails
+// silently and looks identical to a healthy, quiet system: if Alloy stops
+// shipping, every dashboard in this repo goes flat and nothing anywhere says
+// why. These four expose their own /metrics, so meta-monitoring costs one
+// scrape and answers "are the graphs empty, or is the collector dead?".
+prometheus.scrape "observability" {
+  targets = [
+    { __address__ = "alloy:12345", service = "alloy" },
+    { __address__ = "mimir:9009", service = "mimir" },
+    { __address__ = "loki:3100", service = "loki" },
+    { __address__ = "grafana:3000", service = "grafana" },
+  ]
+  metrics_path    = "/metrics"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
 // Redis backs BullMQ — the entire scheduler/queue. Memory pressure and
 // evictions here mean silently lost runs, so it's a first-class signal.
 prometheus.exporter.redis "redis" {
