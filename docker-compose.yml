@@ -20,7 +20,9 @@
 #     budgets, RPM/TPM limits — usage data LibreChat's Agents API
 #     doesn't provide, #38/#102) and routes to Ollama for inference.
 #   - Claude/Anthropic — set ANTHROPIC_API_KEY in this file's own root
-#     .env, then `docker compose restart librechat`.
+#     .env, then `docker compose restart litellm`. Served through the
+#     same gateway (docker/litellm/config.yaml), never handed to
+#     LibreChat directly, so hosted traffic is metered too.
 #
 # Memory limits (mem_limit) are set on every service so the full stack
 # stays predictable on a 16GB host — caps, not reservations.
@@ -205,8 +207,10 @@ services:
       # from the master key so rotating one doesn't invalidate the other.
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
       DATABASE_URL: postgresql://litellm:${LITELLM_POSTGRES_PASSWORD}@litellm-postgres:5432/litellm
-      # Passed through for the optional hosted-provider entry in
-      # docker/litellm/config.yaml; harmless when blank.
+      # For the hosted claude-sonnet entry in docker/litellm/config.yaml
+      # — the only place a provider key lives, so hosted calls stay
+      # behind the gateway's metering. Blank = that model errors on
+      # use; everything else is unaffected.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - type: bind
@@ -221,7 +225,10 @@ services:
       # the DB connection, and litellm-init + LibreChat gate on this
       # healthcheck precisely because they need the DB-backed key
       # endpoints — liveness alone races LiteLLM's DB initialization.
-      test: ["CMD", "python3", "-c", "import json,sys,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:4000/health/readiness')); sys.exit(0 if r.get('status')=='healthy' and r.get('db')=='connected' else 1)"]
+      # Only db is checked: the accompanying status string differs
+      # between LiteLLM's docs ("connected") and shipped images
+      # ("healthy"), and db == "connected" is the part that matters.
+      test: ["CMD", "python3", "-c", "import json,sys,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:4000/health/readiness')); sys.exit(0 if r.get('db')=='connected' else 1)"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -273,21 +280,20 @@ services:
       PORT: 3080
       MONGO_URI: mongodb://librechat-mongo:27017/LibreChat
       SEARCH: "false"
-      # Claude as the provider for local testing — set ANTHROPIC_API_KEY
-      # in this repo's own root .env (not docker/librechat/.env) so
-      # there's one place to drop a real key. Compose's injected
-      # environment here always wins over whatever's in the bind-mounted
-      # docker/librechat/.env for the same key, so that file no longer
-      # carries its own ANTHROPIC_API_KEY line.
+      # No provider API keys in this container — Claude/Anthropic is
+      # served through the LiteLLM gateway (docker/litellm/config.yaml)
+      # like the local models, so its calls get the same metering,
+      # budgets and rate limits. Handing LibreChat the key directly
+      # would let its built-in Anthropic endpoint bypass the gateway.
       #
-      # Deliberately NOT setting ENDPOINTS to restrict this to just
-      # "anthropic": LibreChat's `agents` feature is itself one of the
-      # values in that same endpoint enum, so doing that hid the entire
-      # Agent Builder along with the providers it wasn't meant to
-      # filter. Leaving ENDPOINTS unset means LibreChat shows its own
-      # default set instead — a few more entries in the dropdown than
-      # originally intended, but Agent creation actually works.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Deliberately NOT setting ENDPOINTS to restrict the dropdown:
+      # LibreChat's `agents` feature is itself one of the values in
+      # that same endpoint enum, so doing that hid the entire Agent
+      # Builder along with the providers it wasn't meant to filter.
+      # Leaving ENDPOINTS unset means LibreChat shows its own default
+      # set instead — a few more entries in the dropdown than intended,
+      # but Agent creation actually works.
+      #
       # Custom (non-built-in) endpoints — the local LiteLLM gateway
       # above (which routes on to Ollama) — are defined in the
       # bind-mounted librechat.yaml below; it references this variable
