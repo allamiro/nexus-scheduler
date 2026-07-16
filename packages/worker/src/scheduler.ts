@@ -81,8 +81,10 @@ export async function runSchedulerTick(
     if (claim.count === 0) {
       continue;
     }
+    metrics.schedulesClaimedTotal.inc();
 
     if (missed) {
+      metrics.schedulesMissedTotal.inc();
       await prisma.run.create({
         data: {
           jobId: schedule.jobId,
@@ -134,15 +136,22 @@ export function startSchedulerLoop(
 
   const tick = async () => {
     if (tickInProgress) {
+      // Counted, not just logged: this is the scheduler's saturation signal,
+      // and a warning is only ever found by someone already looking for it.
+      metrics.schedulerTicksTotal.inc({ result: "skipped_reentrant" });
       logger.warn("previous scheduler tick still running, skipping this interval");
       return;
     }
     tickInProgress = true;
+    const stopTimer = metrics.schedulerTickDuration.startTimer();
     try {
       await runSchedulerTick(queue, config, logger, metrics);
+      metrics.schedulerTicksTotal.inc({ result: "ok" });
     } catch (err) {
+      metrics.schedulerTicksTotal.inc({ result: "error" });
       logger.error({ err }, "scheduler tick failed");
     } finally {
+      stopTimer();
       tickInProgress = false;
     }
   };

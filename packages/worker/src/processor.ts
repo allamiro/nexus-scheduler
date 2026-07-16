@@ -122,11 +122,24 @@ async function processRun(
     slotTtlMs,
   );
   if (!acquired) {
+    // Without this, a throttled run is indistinguishable from a slow one: both
+    // simply take longer to start. This is what says the ceiling was hit.
+    metrics.runsThrottledTotal.inc({ scope: "user" });
     logger.info({ runId, userId }, "run throttled — per-user concurrency limit reached, delaying");
     await bullJob.moveToDelayed(Date.now() + 5000, token);
     throw new DelayedError();
   }
 
+  // Enqueue -> pickup, measured against BullMQ's own enqueue stamp. Observed
+  // once the slot is held, so a throttled job — re-delayed and re-entering
+  // here — contributes the whole wait, not just its last attempt. That is
+  // deliberate: this is the delay a user actually experiences before their run
+  // starts, and whether it came from a busy worker or a concurrency ceiling is
+  // not a distinction they can feel. runs_throttled_total attributes the cause;
+  // this measures the cost.
+  metrics.queueWait.observe((Date.now() - bullJob.timestamp) / 1000);
+
+  const stopRunTimer = metrics.runDuration.startTimer();
   try {
     await prisma.run.update({ where: { id: runId }, data: { status: "RUNNING", startedAt: new Date() } });
 
@@ -242,6 +255,7 @@ async function processRun(
       });
 
       metrics.runsTotal.inc({ status: "success" });
+      stopRunTimer({ status: "success" });
       await recordAuditEvent({
         actorType: "SERVICE",
         actorId: "system:scheduler",
@@ -262,6 +276,11 @@ async function processRun(
 
       if (!transient || isFinalAttempt) {
         metrics.runsTotal.inc({ status: "failed" });
+        // Only on the terminal attempt. Observing every failed attempt would
+        // fill the histogram with the duration of retries rather than the
+        // duration of runs, and make a heavily-retried run look like several
+        // fast failures.
+        stopRunTimer({ status: "failed" });
         await prisma.run.update({
           where: { id: runId },
           data: { status: "FAILED", completedAt: new Date(), errorMessage },
