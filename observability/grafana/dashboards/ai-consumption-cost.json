@@ -43,7 +43,7 @@
     {
       "type": "timeseries",
       "title": "Tokens/sec by type",
-      "description": "nexus_scheduler_run_tokens_total{type=\"prompt|completion\"} \u2014 live.",
+      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -65,7 +65,7 @@
     {
       "type": "timeseries",
       "title": "Tokens/sec by model",
-      "description": "Labelled by the serving model, never by agentId/jobId/userId \u2014 those are user-created and unbounded (#108 is the same mistake in the API route label).",
+      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -92,12 +92,13 @@
         "w": 24,
         "x": 0,
         "y": 14
-      }
+      },
+      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call."
     },
     {
       "type": "stat",
       "title": "Spend (24h)",
-      "description": "Requires nexus_scheduler_run_cost_total. Meaningful only once LiteLLM (#102) makes usage authoritative.",
+      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -147,12 +148,13 @@
           "expr": "sum by (model) (rate(nexus_scheduler_run_cost_total[10m])) * 3600",
           "legendFormat": "{{model}} $/h"
         }
-      ]
+      ],
+      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call."
     },
     {
       "type": "stat",
       "title": "Cost per successful run",
-      "description": "Unit economics: spend divided by successful runs. The number that tells you whether a model/prompt change actually paid off.",
+      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -223,7 +225,7 @@
         "x": 0,
         "y": 31
       },
-      "description": "Total tokens divided by successful runs, per model. The unit-economics number: it moves when a prompt or model changes, and is the cheapest early warning that a prompt has quietly grown. Written with on() group_left(): the numerator carries a model label and the denominator does not, so a plain division silently matches nothing.",
+      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
