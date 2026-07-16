@@ -44,6 +44,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus}
       POSTGRES_DB: ${POSTGRES_DB:-nexus}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # Scopes log discovery to this project's containers (see config.alloy).
+      # Compose does not expose its project name to containers, so pass it in.
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-nexus-scheduler}
     # cAdvisor reads OOM-kill events from /dev/kmsg. With kernel.dmesg_restrict=1
     # (the default on most distros) that read needs CAP_SYSLOG — and the
     # capability is only effective for a root process, while the Alloy image

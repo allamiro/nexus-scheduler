@@ -84,6 +84,21 @@ discovery.docker "containers" {
 discovery.relabel "containers" {
   targets = discovery.docker.containers.targets
 
+  // Keep only this Compose project. discovery.docker reads the whole host
+  // daemon, not just this stack, so without this rule Alloy tails the logs of
+  // every unrelated container on the machine into this Loki — and the same
+  // compose file serves Grafana with anonymous Admin, so anything those
+  // containers log (credentials included) becomes readable by anyone who can
+  // reach it, and is retained here for 7 days.
+  //
+  // Honours COMPOSE_PROJECT_NAME so a renamed project still matches; the
+  // default mirrors Compose's own (the directory name).
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = coalesce(sys.env("COMPOSE_PROJECT"), "nexus-scheduler")
+    action        = "keep"
+  }
+
   // Container name -> a clean `service` label (drop Docker's leading "/").
   rule {
     source_labels = ["__meta_docker_container_name"]
