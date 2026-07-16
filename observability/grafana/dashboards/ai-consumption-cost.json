@@ -174,14 +174,23 @@
           "refId": "A",
           "expr": "sum by (model) (rate(nexus_scheduler_run_cost_total[10m])) * 3600",
           "legendFormat": "{{model}} $/h"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum by (model) (rate(litellm_gateway_spend_usd_total[10m])) * 3600",
+          "legendFormat": "gateway: {{model}} $/h",
+          "refId": "B"
         }
       ],
-      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call."
+      "description": "Gateway series show a flat $0 for local Ollama models \u2014 they are genuinely free; real spend appears when a hosted model (claude-sonnet) runs through the gateway. App-side series additionally need cost rates configured and LibreChat usage reporting (#38)."
     },
     {
       "type": "stat",
       "title": "Cost per successful run",
-      "description": "Fed by nexus_scheduler_run_tokens_total / run_cost_total, which increment only when LibreChat's Agents API reports usage \u2014 and it currently returns all-zero usage for headless API-key calls (issue #38, verified live), so these stay empty even with the metrics code deployed. The authoritative per-model token/spend data lives in the LiteLLM gateway (#102): its admin UI and /spend/logs meter every call.",
+      "description": "Gateway spend over app-side successful runs. $0 with traffic is correct while only free local models run; hosted-model spend appears here per run once configured.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -203,6 +212,15 @@
           "refId": "A",
           "expr": "sum(increase(nexus_scheduler_run_cost_total[24h])) / clamp_min(sum(increase(nexus_scheduler_runs_total{status=\"success\"}[24h])), 1)",
           "legendFormat": "$/successful run"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "(sum(increase(litellm_gateway_spend_usd_total[24h])) or vector(0)) / clamp_min(sum(increase(nexus_scheduler_runs_total{status=\"success\"}[24h])), 1)",
+          "legendFormat": "gateway $/run",
+          "refId": "B"
         }
       ]
     },
