@@ -24,7 +24,7 @@ alloy:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 512Mi}
   # The namespaces where the workloads to observe run — typically the
-  # app chart's and the nexus-ai chart's, since all three charts are
+  # app chart's and the test-ai chart's, since all three charts are
   # deliberately independent installs. Alloy scrapes any pod in these
   # namespaces (plus its own) carrying prometheus.io/scrape
   # annotations, and tails their logs; no per-service list to
