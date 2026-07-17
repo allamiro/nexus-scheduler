@@ -22,6 +22,13 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/alloy-configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "observability.fullname" . }}-alloy
+      securityContext:
+        # The image runs as its own non-root user; fsGroup makes the
+        # storage emptyDir writable for it (same class of failure the
+        # PVC-backed pods had).
+        runAsNonRoot: true
+        runAsUser: 473
+        fsGroup: 473
       containers:
         - name: alloy
           image: {{ include "observability.image" (dict "root" $ "image" .Values.alloy.image) }}
@@ -57,7 +64,11 @@ spec:
             - name: host-root
               mountPath: /host/root
               readOnly: true
-              mountPropagation: HostToContainer
+              # No mountPropagation: it requires a shared/slave host
+              # mount, which some runtimes (Docker Desktop's VM among
+              # them) refuse outright — the cost is only that mounts
+              # created after pod start aren't seen by the filesystem
+              # collector.
             {{- end }}
           resources:
             {{- toYaml .Values.alloy.resources | nindent 12 }}

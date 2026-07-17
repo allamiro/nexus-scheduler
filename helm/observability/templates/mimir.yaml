@@ -1,6 +1,13 @@
 {{- define "observability.mimir.config" -}}
 target: all
 multitenancy_enabled: false
+# Written relative to the working directory by default, which the
+# non-root user cannot write — surfaced by a real install, the compose
+# stack masked it by running as root.
+activity_tracker:
+  filepath: /data/metrics-activity.log
+ruler:
+  rule_path: /data/ruler-scratch
 server:
   http_listen_port: 9009
   grpc_listen_port: 9095
