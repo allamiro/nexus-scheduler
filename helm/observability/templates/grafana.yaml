@@ -90,7 +90,12 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "3000"
         checksum/dashboards: {{ (.Files.Glob "dashboards/*.json").AsConfig | sha256sum | trunc 32 }}
+        checksum/provisioning: {{ printf "%s|%s" (include "observability.fullname" .) .Chart.Version | sha256sum | trunc 16 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        fsGroup: 472
       containers:
         - name: grafana
           image: {{ include "observability.image" (dict "root" $ "image" .Values.grafana.image) }}

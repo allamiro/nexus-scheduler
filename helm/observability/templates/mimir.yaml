@@ -1,3 +1,48 @@
+{{- define "observability.mimir.config" -}}
+target: all
+multitenancy_enabled: false
+server:
+  http_listen_port: 9009
+  grpc_listen_port: 9095
+  log_level: warn
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/common
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/blocks
+  bucket_store:
+    sync_dir: /data/tsdb-sync
+  tsdb:
+    dir: /data/tsdb
+ruler_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/ruler
+compactor:
+  data_dir: /data/compactor
+ingester:
+  ring:
+    replication_factor: 1
+    kvstore:
+      store: memberlist
+distributor:
+  ring:
+    kvstore:
+      store: memberlist
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+    kvstore:
+      store: memberlist
+memberlist:
+  join_members: []
+limits:
+  compactor_blocks_retention_period: {{ .Values.mimir.retention }}
+{{- end }}
 # Mimir in monolithic mode on a PVC — the single-writer profile this
 # chart is scoped to. The config is the Compose file's, with retention
 # taken from values.
@@ -9,49 +54,7 @@ metadata:
     {{- include "observability.labels" . | nindent 4 }}
 data:
   mimir.yaml: |
-    target: all
-    multitenancy_enabled: false
-    server:
-      http_listen_port: 9009
-      grpc_listen_port: 9095
-      log_level: warn
-    common:
-      storage:
-        backend: filesystem
-        filesystem:
-          dir: /data/common
-    blocks_storage:
-      backend: filesystem
-      filesystem:
-        dir: /data/blocks
-      bucket_store:
-        sync_dir: /data/tsdb-sync
-      tsdb:
-        dir: /data/tsdb
-    ruler_storage:
-      backend: filesystem
-      filesystem:
-        dir: /data/ruler
-    compactor:
-      data_dir: /data/compactor
-    ingester:
-      ring:
-        replication_factor: 1
-        kvstore:
-          store: memberlist
-    distributor:
-      ring:
-        kvstore:
-          store: memberlist
-    store_gateway:
-      sharding_ring:
-        replication_factor: 1
-        kvstore:
-          store: memberlist
-    memberlist:
-      join_members: []
-    limits:
-      compactor_blocks_retention_period: {{ .Values.mimir.retention }}
+{{ include "observability.mimir.config" . | trim | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -75,8 +78,14 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9009"
-        checksum/config: {{ toYaml .Values.mimir | sha256sum | trunc 32 }}
+        checksum/config: {{ include "observability.mimir.config" . | sha256sum | trunc 32 }}
     spec:
+      securityContext:
+        # The image runs as a non-root user; without fsGroup the PVC's
+        # root-owned mount point is unwritable and the pod never comes up.
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
       containers:
         - name: mimir
           image: {{ include "observability.image" (dict "root" $ "image" .Values.mimir.image) }}
