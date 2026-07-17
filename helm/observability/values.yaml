@@ -92,6 +92,27 @@ grafana:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 512Mi}
 
+# Database integrations for the Infrastructure dashboard's Postgres and
+# Redis panels — a separate single-replica Deployment, NOT part of the
+# Alloy DaemonSet (one exporter per database, not one per node, or
+# every node scrapes the same server). Off by default: point them at
+# the app's databases only where those are reachable from this
+# cluster, with credentials from existing Secrets.
+integrations:
+  postgres:
+    enabled: false
+    # Secret with key `dsn`, e.g.
+    # postgresql://user:pass@postgres:5432/db?sslmode=disable
+    existingSecret: ""
+  redis:
+    enabled: false
+    addr: "redis:6379"
+    # Optional Secret with key `password`; omit for unauthenticated.
+    existingSecret: ""
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
 # Bridges the LiteLLM gateway's spend log into Prometheus (the OSS
 # proxy has no /metrics). Enable only when the gateway runs in-cluster;
 # reuses the gateway's image (python3 + stdlib script from a ConfigMap).
