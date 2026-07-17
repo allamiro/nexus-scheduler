@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability.fullname" . }}-alloy-config
+  labels:
+    {{- include "observability.labels" . | nindent 4 }}
+data:
+  config.alloy: |
+    // Kubernetes port of observability/alloy/config.alloy. The compose
+    // file's docker-socket discovery becomes Kubernetes API discovery;
+    // per-container CPU/memory comes from each node's kubelet cAdvisor
+    // instead of a cAdvisor exporter (works on every conformant
+    // cluster, no bind mounts).
+
+    prometheus.remote_write "mimir" {
+      endpoint {
+        url = "http://{{ include "observability.fullname" . }}-mimir:9009/api/v1/push"
+      }
+    }
+
+    loki.write "loki" {
+      endpoint {
+        url = "http://{{ include "observability.fullname" . }}-loki:3100/loki/api/v1/push"
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // App metrics: any pod annotated prometheus.io/scrape=true (the app
+    // chart sets these on api and worker) in the app namespace or ours.
+    // ------------------------------------------------------------------
+    discovery.kubernetes "pods" {
+      role = "pod"
+      namespaces {
+        names = [
+          {{- if .Values.alloy.appNamespace }}
+          {{ .Values.alloy.appNamespace | quote }},
+          {{- end }}
+          {{ .Release.Namespace | quote }},
+        ]
+      }
+    }
+
+    discovery.relabel "annotated_pods" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+        regex         = "true"
+        action        = "keep"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+        regex         = "(.+)"
+        target_label  = "__metrics_path__"
+      }
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+        target_label  = "__address__"
+        replacement   = "$1:$2"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        target_label  = "service"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+    }
+
+    prometheus.scrape "app" {
+      targets         = discovery.relabel.annotated_pods.output
+      forward_to      = [prometheus.remote_write.mimir.receiver]
+      scrape_interval = "15s"
+    }
+
+    {{- if .Values.alloy.kubeletCadvisor }}
+    // ------------------------------------------------------------------
+    // Per-container CPU/memory from each node's kubelet cAdvisor —
+    // feeds the same container_* series the dashboards query.
+    // ------------------------------------------------------------------
+    discovery.kubernetes "nodes" {
+      role = "node"
+    }
+
+    discovery.relabel "cadvisor" {
+      targets = discovery.kubernetes.nodes.targets
+      rule {
+        target_label = "__metrics_path__"
+        replacement  = "/metrics/cadvisor"
+      }
+    }
+
+    prometheus.scrape "kubelet_cadvisor" {
+      targets           = discovery.relabel.cadvisor.output
+      forward_to        = [prometheus.remote_write.mimir.receiver]
+      scheme            = "https"
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        ca_file              = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        insecure_skip_verify = true
+      }
+      scrape_interval = "30s"
+    }
+    {{- end }}
+
+    // ------------------------------------------------------------------
+    // Self-monitoring (collector-health dashboard).
+    // ------------------------------------------------------------------
+    prometheus.scrape "observability" {
+      targets = [
+        { __address__ = "{{ include "observability.fullname" . }}-mimir:9009", service = "mimir" },
+        { __address__ = "{{ include "observability.fullname" . }}-loki:3100", service = "loki" },
+        { __address__ = "{{ include "observability.fullname" . }}-grafana:3000", service = "grafana" },
+        {{- if .Values.litellmExporter.enabled }}
+        { __address__ = "{{ include "observability.fullname" . }}-litellm-exporter:9099", service = "litellm-gateway" },
+        {{- end }}
+      ]
+      forward_to      = [prometheus.remote_write.mimir.receiver]
+      scrape_interval = "15s"
+    }
+
+    // ------------------------------------------------------------------
+    // Logs: every pod in the app namespace and ours, via the
+    // Kubernetes API (no docker socket, no hostPath tailing).
+    // ------------------------------------------------------------------
+    discovery.relabel "pod_logs" {
+      targets = discovery.kubernetes.pods.targets
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "service"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+    }
+
+    loki.source.kubernetes "pods" {
+      targets    = discovery.relabel.pod_logs.output
+      forward_to = [loki.process.levels.receiver]
+    }
+
+    loki.process "levels" {
+      forward_to = [loki.write.loki.receiver]
+      stage.json {
+        expressions = { level = "level" }
+      }
+      stage.labels {
+        values = { level = "" }
+      }
+    }
