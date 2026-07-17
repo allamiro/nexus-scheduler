@@ -32,6 +32,9 @@ data:
       role = "pod"
       namespaces {
         names = [
+          {{- range .Values.alloy.appNamespaces }}
+          {{ . | quote }},
+          {{- end }}
           {{- if .Values.alloy.appNamespace }}
           {{ .Values.alloy.appNamespace | quote }},
           {{- end }}

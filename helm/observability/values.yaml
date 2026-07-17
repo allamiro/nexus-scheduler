@@ -23,10 +23,14 @@ alloy:
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 512Mi}
-  # The namespace where nexus-scheduler runs. Alloy scrapes any pod
-  # (in this namespace or its own) carrying the prometheus.io/scrape
-  # annotations the app chart already sets — no per-service list to
-  # maintain here.
+  # The namespaces where the workloads to observe run — typically the
+  # app chart's and the nexus-ai chart's, since all three charts are
+  # deliberately independent installs. Alloy scrapes any pod in these
+  # namespaces (plus its own) carrying prometheus.io/scrape
+  # annotations, and tails their logs; no per-service list to
+  # maintain. appNamespace (singular) is still honoured for
+  # compatibility.
+  appNamespaces: []
   appNamespace: ""
   # Scrape each node's kubelet cAdvisor endpoint for the per-container
   # CPU/memory panels. Works on every conformant cluster; needs the
