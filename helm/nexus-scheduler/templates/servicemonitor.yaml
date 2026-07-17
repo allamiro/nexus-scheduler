@@ -5,7 +5,7 @@ monitoring stack of our own. The app exposes /metrics; the platform collects it.
 Deliberately not shipping Alloy/Mimir/Loki/Grafana in this chart: a real cluster
 already has them, and an app chart that brings its own would duplicate storage,
 compete for scrape ownership, and make this chart responsible for upgrading four
-infrastructure components it does not own. docker-compose.observability.yml
+infrastructure components it does not own. the repo's compose observability overlay (issue #103)
 exists for local development, where none of that is true.
 
 Off by default: this needs the Prometheus Operator's CRD, and rendering a
