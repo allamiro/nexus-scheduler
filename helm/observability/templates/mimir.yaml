@@ -73,6 +73,8 @@ spec:
         app.kubernetes.io/name: mimir
         {{- include "observability.labels" . | nindent 8 }}
       annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9009"
         checksum/config: {{ toYaml .Values.mimir | sha256sum | trunc 32 }}
     spec:
       containers:

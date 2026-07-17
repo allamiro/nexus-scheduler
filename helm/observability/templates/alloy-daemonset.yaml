@@ -25,6 +25,14 @@ spec:
       containers:
         - name: alloy
           image: {{ include "observability.image" (dict "root" $ "image" .Values.alloy.image) }}
+          env:
+            # Scopes discovery to this node — see the keep rules in the
+            # config; a DaemonSet without this collects cluster-wide, N
+            # times over.
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           args:
             - run
             - --server.http.listen-addr=0.0.0.0:12345

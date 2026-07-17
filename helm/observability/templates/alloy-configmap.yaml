@@ -43,6 +43,14 @@ data:
     discovery.relabel "annotated_pods" {
       targets = discovery.kubernetes.pods.targets
 
+      // Every node runs an Alloy; each collects only its own node's
+      // pods, or an N-node cluster scrapes (and tails) everything N
+      // times over.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        regex         = sys.env("NODE_NAME")
+        action        = "keep"
+      }
       rule {
         source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
         regex         = "true"
@@ -61,6 +69,15 @@ data:
       }
       rule {
         source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        target_label  = "service"
+      }
+      // The app chart shares app.kubernetes.io/name across api/worker/
+      // pdf-service and puts the per-service identity in .../component
+      // — prefer it when present so panels don't collapse every app
+      // pod into one "nexus-scheduler" series.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_component"]
+        regex         = "(.+)"
         target_label  = "service"
       }
       rule {
@@ -86,6 +103,12 @@ data:
 
     discovery.relabel "cadvisor" {
       targets = discovery.kubernetes.nodes.targets
+      // Own node only — same N-times-over argument as the pod scrape.
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        regex         = sys.env("NODE_NAME")
+        action        = "keep"
+      }
       rule {
         target_label = "__metrics_path__"
         replacement  = "/metrics/cadvisor"
@@ -106,16 +129,17 @@ data:
     {{- end }}
 
     // ------------------------------------------------------------------
-    // Self-monitoring (collector-health dashboard).
+    // Self-monitoring. Mimir, Loki, Grafana and the optional exporter
+    // carry prometheus.io/scrape annotations on their pods, so the
+    // node-local annotated-pods path above collects them exactly once,
+    // wherever they land. Alloy itself is not a discoverable pod from
+    // its own config — each instance scrapes its own listener, with
+    // the pod name as the instance label so per-node series don't
+    // collide.
     // ------------------------------------------------------------------
-    prometheus.scrape "observability" {
+    prometheus.scrape "self" {
       targets = [
-        { __address__ = "{{ include "observability.fullname" . }}-mimir:9009", service = "mimir" },
-        { __address__ = "{{ include "observability.fullname" . }}-loki:3100", service = "loki" },
-        { __address__ = "{{ include "observability.fullname" . }}-grafana:3000", service = "grafana" },
-        {{- if .Values.litellmExporter.enabled }}
-        { __address__ = "{{ include "observability.fullname" . }}-litellm-exporter:9099", service = "litellm-gateway" },
-        {{- end }}
+        { __address__ = "127.0.0.1:12345", service = "alloy", instance = sys.env("HOSTNAME") },
       ]
       forward_to      = [prometheus.remote_write.mimir.receiver]
       scrape_interval = "15s"
@@ -127,6 +151,14 @@ data:
     // ------------------------------------------------------------------
     discovery.relabel "pod_logs" {
       targets = discovery.kubernetes.pods.targets
+      // Node-local tailing: without this every Alloy tails every pod
+      // through the API server and each log line is stored once per
+      // node in the cluster.
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        regex         = sys.env("NODE_NAME")
+        action        = "keep"
+      }
       rule {
         source_labels = ["__meta_kubernetes_pod_name"]
         target_label  = "service"

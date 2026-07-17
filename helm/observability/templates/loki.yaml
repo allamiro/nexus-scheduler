@@ -60,6 +60,8 @@ spec:
         app.kubernetes.io/name: loki
         {{- include "observability.labels" . | nindent 8 }}
       annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3100"
         checksum/config: {{ toYaml .Values.loki | sha256sum | trunc 32 }}
     spec:
       containers:

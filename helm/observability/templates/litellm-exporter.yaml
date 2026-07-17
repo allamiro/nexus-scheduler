@@ -34,6 +34,9 @@ spec:
       labels:
         app.kubernetes.io/name: litellm-exporter
         {{- include "observability.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9099"
     spec:
       containers:
         - name: exporter

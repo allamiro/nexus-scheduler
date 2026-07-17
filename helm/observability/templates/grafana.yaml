@@ -87,6 +87,8 @@ spec:
         app.kubernetes.io/name: grafana
         {{- include "observability.labels" . | nindent 8 }}
       annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
         checksum/dashboards: {{ (.Files.Glob "dashboards/*.json").AsConfig | sha256sum | trunc 32 }}
     spec:
       containers:
