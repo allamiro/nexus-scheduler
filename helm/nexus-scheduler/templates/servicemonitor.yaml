@@ -11,23 +11,22 @@ exists for local development, where none of that is true.
 Off by default: this needs the Prometheus Operator's CRD, and rendering a
 ServiceMonitor into a cluster without it fails the apply. Turning it on is a
 statement that the CRD exists.
+
+pdf-service is deliberately absent. It is the one component REQUIREMENTS §2.5
+isolates outright, and pdf-service-networkpolicy.yaml is not merely one control
+among several — app.ts says so itself: "access control is NetworkPolicy, not
+session/API-key auth". Scraping it would mean opening its port to the monitoring
+namespace, and a NetworkPolicy cannot distinguish GET /metrics from
+POST /render/* — they are the same Express listener on the same port, and the
+chart sets no PDF_SERVICE_SHARED_SECRET. So the hole that admits Prometheus also
+admits anything in that namespace to drive Chromium. Collecting a metric is not
+worth handing that away; doing it safely needs a dedicated metrics listener,
+which is an application change, not a chart one.
 */ -}}
 {{- if .Values.observability.serviceMonitor.enabled }}
 {{- $components := list
       (dict "name" "api"    "port" "http")
       (dict "name" "worker" "port" "health") }}
-{{- /*
-pdf-service only when there is a route for Prometheus to actually reach it.
-Its NetworkPolicy denies all ingress except from this release's api and worker
-(REQUIREMENTS §2.5 — a headless-Chromium renderer reachable by nothing else),
-so rendering a ServiceMonitor regardless would create a target that is
-permanently down and page someone about a scrape failure that is really a
-policy decision. observability.serviceMonitor.scrapeFrom is what opens the
-path; until it is set, no target is the honest answer.
-*/ -}}
-{{- if .Values.observability.serviceMonitor.scrapeFrom }}
-{{- $components = append $components (dict "name" "pdf-service" "port" "http") }}
-{{- end }}
 {{- range $c := $components }}
 ---
 apiVersion: monitoring.coreos.com/v1
