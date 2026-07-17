@@ -248,30 +248,19 @@ observability:
     # is the common one) and will silently ignore this object without it —
     # which looks exactly like the app not exposing metrics.
     labels: {}
-    # pdf-service is deliberately network-isolated: pdf-service-networkpolicy.yaml
-    # denies all ingress except from this release's api and worker pods, because
-    # a headless-Chromium renderer should not be reachable by anything else
-    # (REQUIREMENTS §2.5). Prometheus is not one of those pods, so scraping it
-    # needs an explicit hole punched for whatever Prometheus runs as.
+    # pdf-service is not scraped, and cannot safely be. It is the one
+    # component REQUIREMENTS §2.5 isolates outright, and its NetworkPolicy is
+    # not one control among several — app.ts says so itself: "access control is
+    # NetworkPolicy, not session/API-key auth". Its /metrics and its
+    # POST /render/* endpoints are the same Express listener on the same port,
+    # and a NetworkPolicy cannot tell them apart, so any rule that lets
+    # Prometheus in also lets that namespace drive Chromium. Doing it safely
+    # needs a dedicated metrics listener — an application change, not a chart
+    # one. api and worker are unaffected and are scraped normally.
     #
-    # Left empty, no ServiceMonitor is rendered for pdf-service at all. That is
-    # deliberate: the alternative is a target Prometheus can never reach, which
-    # shows up as permanently down and pages someone about a scrape failure that
-    # is really a policy decision. No target beats a dead one.
-    #
-    # Set this to the NetworkPolicy peer(s) your Prometheus runs as, and both
-    # the ingress rule and the ServiceMonitor appear together, e.g.:
-    #   scrapeFrom:
-    #     - namespaceSelector:
-    #         matchLabels:
-    #           kubernetes.io/metadata.name: monitoring
-    scrapeFrom: []
-    # Applied at ingestion, before storage — the place to drop a metric this
-    # cluster does not want to pay to keep, or to rewrite a label whose
-    # cardinality is a problem in your deployment specifically. Left empty
-    # because the app's own labels are already bounded by design: `route` is the
-    # matched Express route pattern, never a raw id, and 404s collapse to
-    # "unmatched" rather than echoing an attacker-controlled path. Example:
+    # Applied at ingestion, before storage — the place to drop a metric family
+    # this cluster does not want to pay to keep, or to rewrite a label whose
+    # cardinality is a problem in your deployment specifically. Example:
     #   metricRelabelings:
     #     - sourceLabels: [__name__]
     #       regex: 'nodejs_gc_duration_seconds.*'
