@@ -72,8 +72,7 @@ explicitly configured rather than fetched at install time.
 - **Observability** — Prometheus metrics from every service (including
   per-model LLM latency, token consumption and error kinds), a
   Postgres-backed audit log, and an optional RFC 5424 syslog mirror for
-  SIEM integration. An optional Grafana/Alloy/Mimir/Loki stack for local
-  development ships as a separate Compose file.
+  SIEM integration.
 - **Admin console** — user/role management, classification taxonomy,
   cost rates, and the webhook destination allow-list.
 - **Built-in Knowledge Base** — a searchable, offline (bundled, no
