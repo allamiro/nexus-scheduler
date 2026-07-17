@@ -6,11 +6,11 @@ Grafana:
   pass: kubectl -n {{ .Release.Namespace }} get secret {{ include "observability.fullname" . }}-grafana-admin -o jsonpath='{.data.password}' | base64 -d
 
 App scraping: any pod annotated prometheus.io/scrape=true is collected
-automatically{{ if .Values.alloy.appNamespace }} in namespace {{ .Values.alloy.appNamespace }}{{ end }} — the nexus-scheduler app chart sets those
-annotations on the api and worker already. Do NOT also enable the app
-chart's observability.serviceMonitor unless a separate Prometheus
-Operator owns those scrapes; double collection skews rate() panels.
+automatically{{ if .Values.alloy.appNamespace }} in namespace {{ .Values.alloy.appNamespace }}{{ end }}. Annotation support for the app chart's api and
+worker pods is in review under issue #103; until it lands, annotate the
+pods via the app chart's podAnnotations values. If a separate
+Prometheus also scrapes the same pods, expect doubled samples — pick
+one collector per target.
 
-Scope reminder: single-replica, filesystem-backed. For clusters that
-already run a monitoring stack, use the app chart's serviceMonitor
-values instead of this chart.
+Scope reminder: single-replica, filesystem-backed. Clusters that
+already run a monitoring stack should keep it and skip this chart.

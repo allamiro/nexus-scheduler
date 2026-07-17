@@ -47,6 +47,18 @@ spec:
               readOnly: true
             - name: data
               mountPath: /var/lib/alloy/data
+            {{- if .Values.alloy.hostMetrics }}
+            - name: host-proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: host-sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: host-root
+              mountPath: /host/root
+              readOnly: true
+              mountPropagation: HostToContainer
+            {{- end }}
           resources:
             {{- toYaml .Values.alloy.resources | nindent 12 }}
           securityContext:
@@ -60,3 +72,11 @@ spec:
             name: {{ include "observability.fullname" . }}-alloy-config
         - name: data
           emptyDir: {}
+        {{- if .Values.alloy.hostMetrics }}
+        - name: host-proc
+          hostPath: {path: /proc}
+        - name: host-sys
+          hostPath: {path: /sys}
+        - name: host-root
+          hostPath: {path: /}
+        {{- end }}

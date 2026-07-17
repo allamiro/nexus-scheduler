@@ -32,6 +32,11 @@ alloy:
   # CPU/memory panels. Works on every conformant cluster; needs the
   # RBAC this chart installs.
   kubeletCadvisor: true
+  # Run Alloy's embedded unix exporter against the node's /proc,/sys,/
+  # (read-only hostPath mounts) — feeds the Host dashboard's node_*
+  # panels, mirroring the Compose stack's host job. Disable if node
+  # metrics already come from elsewhere.
+  hostMetrics: true
 
 mimir:
   image:

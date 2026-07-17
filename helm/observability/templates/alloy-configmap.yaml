@@ -128,6 +128,38 @@ data:
     }
     {{- end }}
 
+    {{- if .Values.alloy.hostMetrics }}
+    // ------------------------------------------------------------------
+    // Host metrics: Alloy's embedded unix exporter against the node's
+    // own /proc,/sys,/ — feeds the Host dashboard's node_* panels the
+    // same way the Compose stack's host job does. Per-node by
+    // construction; instance is the node name.
+    // ------------------------------------------------------------------
+    prometheus.exporter.unix "host" {
+      procfs_path = "/host/proc"
+      sysfs_path  = "/host/sys"
+      rootfs_path = "/host/root"
+    }
+
+    discovery.relabel "host" {
+      targets = prometheus.exporter.unix.host.targets
+      rule {
+        target_label = "instance"
+        replacement  = sys.env("NODE_NAME")
+      }
+      rule {
+        target_label = "service"
+        replacement  = "host"
+      }
+    }
+
+    prometheus.scrape "host" {
+      targets         = discovery.relabel.host.output
+      forward_to      = [prometheus.remote_write.mimir.receiver]
+      scrape_interval = "30s"
+    }
+    {{- end }}
+
     // ------------------------------------------------------------------
     // Self-monitoring. Mimir, Loki, Grafana and the optional exporter
     // carry prometheus.io/scrape annotations on their pods, so the
