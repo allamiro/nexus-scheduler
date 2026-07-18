@@ -90,6 +90,18 @@ librechat:
   # install, preserved on upgrade.
   existingSecret: ""
   allowRegistration: true
+  # Optional LibreChat "Upload as Text" OCR. Deploy helm/ocr separately
+  # and set this to its cluster URL including /v1, for example
+  # http://nexus-ocr:4200/v1. Empty leaves chat-upload OCR disabled.
+  ocr:
+    baseUrl: ""
+  # LibreChat enforces these before it calls OCR. Keep them aligned with
+  # the OCR service and scheduler attachment ceilings: 10 files, 15 MB
+  # each, and 50 MB total per message.
+  fileConfig:
+    fileLimit: 10
+    fileSizeLimit: 15
+    totalSizeLimit: 50
   service:
     type: ClusterIP
     port: 3080
