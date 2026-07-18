@@ -85,10 +85,12 @@ LITELLM_SALT_KEY=sk-$(random_hex 24)
 LITELLM_POSTGRES_PASSWORD=$(random_hex 24)
 LITELLM_LIBRECHAT_KEY=sk-$(random_hex 24)
 
-# Claude/Anthropic as LibreChat's provider for local testing (optional
-# — leave blank and LibreChat just won't offer it as an endpoint). Get
-# a key at https://console.anthropic.com/ — docker-compose.yml passes
-# this straight into the librechat container's environment.
+# Claude/Anthropic for local testing (optional — leave blank and the
+# gateway's claude-sonnet model just fails with an auth error if
+# selected). Get a key at https://console.anthropic.com/ —
+# docker-compose.yml passes this into the litellm container only, so
+# hosted calls go through the gateway's metering/budgets like the
+# local models (never handed to LibreChat directly).
 ANTHROPIC_API_KEY=
 EOF
   echo "Wrote .env with freshly generated local secrets."

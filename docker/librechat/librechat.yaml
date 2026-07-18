@@ -9,9 +9,11 @@
 # Ollama (gemma3:1b as the default chat model, plus coding/reasoning
 # models — see docker/litellm/config.yaml) and meters every call:
 # per-key spend, budgets, rate limits (#38, #102). LibreChat therefore
-# no longer talks to Ollama directly. Anthropic/Claude
-# (docker-compose.yml's ANTHROPIC_API_KEY) is configured separately as
-# a built-in endpoint, not through this file.
+# no longer talks to any model backend directly: Ollama sits behind
+# the gateway, and Claude/Anthropic (ANTHROPIC_API_KEY in the root
+# .env) is a gateway model too — claude-sonnet in
+# docker/litellm/config.yaml — rather than a LibreChat built-in
+# endpoint, so hosted traffic is metered the same way.
 version: 1.3.13
 cache: true
 

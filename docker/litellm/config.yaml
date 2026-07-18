@@ -63,12 +63,16 @@ model_list:
   #     api_base: http://ollama:11434
   #
   # Hosted provider through the same gateway (real agentic work — the
-  # small local models above are weak at tool calling). Metering and
-  # budgets then cover it too:
-  # - model_name: claude-sonnet
-  #   litellm_params:
-  #     model: anthropic/claude-sonnet-5
-  #     api_key: os.environ/ANTHROPIC_API_KEY
+  # small local models above are weak at tool calling), so metering,
+  # budgets and rate limits cover it too. Active once ANTHROPIC_API_KEY
+  # is set in the root .env (then: docker compose restart litellm);
+  # with no key the model is still listed but calls to it fail with an
+  # authentication error. Deliberately NOT wired into LibreChat's
+  # built-in Anthropic endpoint — that would bypass the gateway.
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: os.environ/ANTHROPIC_API_KEY
 
 litellm_settings:
   # Ollama runs one model at a time here (OLLAMA_MAX_LOADED_MODELS=1);

@@ -158,10 +158,15 @@ scriptable):
      work add a hosted model behind the same gateway
      (`docker/litellm/config.yaml`).
    - **Claude** — set `ANTHROPIC_API_KEY` in this repo's root `.env` to
-     a real key, then `docker compose restart librechat`.
+     a real key, then `docker compose restart litellm`, and pick the
+     `claude-sonnet` model on the same LiteLLM endpoint. Claude goes
+     through the gateway too — never directly to LibreChat — so hosted
+     traffic gets the same metering, budgets, and rate limits.
 
-   (`OPENAI_API_KEY`/`AZURE_API_KEY` also work if you'd rather test
-   against those — set them in `docker/librechat/.env`.)
+   (Other hosted providers work the same way — add a `model_list`
+   entry for them in `docker/litellm/config.yaml` rather than handing
+   LibreChat a provider key directly, which would bypass the gateway's
+   metering.)
 2. Visit http://localhost:3080 and register an account — this is
    LibreChat's own local auth, separate from Nexus Scheduler's users.
 3. Create an Agent in LibreChat's UI, backed by whichever provider you
