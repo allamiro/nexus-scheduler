@@ -31,7 +31,17 @@ const envSchema = z.object({
   // BOOTSTRAP_ADMIN_EMAIL account below: that one has to keep working
   // even if an operator turns this off, or there'd be no way back in
   // without DB access, defeating the point of a break-glass account.
-  LOCAL_AUTH_ENABLED: z.coerce.boolean().default(true),
+  //
+  // Not z.coerce.boolean(): that runs JS `Boolean()` on the raw string,
+  // and Boolean("false") === true — LOCAL_AUTH_ENABLED=false would
+  // silently leave local auth on, which is exactly backwards for a
+  // security-relevant flag (issue #125). An explicit "true"/"false"
+  // enum means anything else fails config validation instead of being
+  // misread.
+  LOCAL_AUTH_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
 
   // Built-in break-glass admin account. The env var is the *ongoing*
   // source of truth, not just a one-time seed: its password is
