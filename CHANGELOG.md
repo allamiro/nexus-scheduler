@@ -10,6 +10,16 @@ packages, so there's no per-package versioning here (see `scripts/release.mjs`).
 
 ## [Unreleased]
 
+### Security
+
+- `LOCAL_AUTH_ENABLED=false` was silently ignored: the env var used
+  `z.coerce.boolean()`, which runs JavaScript's `Boolean()` on the raw
+  string, and `Boolean("false") === true` — any non-empty value,
+  including the documented-looking `false`, left local auth enabled.
+  Now parsed as an explicit `"true"`/`"false"` enum, so an unrecognized
+  value fails config validation at startup instead of being silently
+  misread (#125).
+
 ## [0.1.9] - 2026-07-16
 
 ### Added
