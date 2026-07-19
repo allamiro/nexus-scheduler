@@ -293,6 +293,22 @@ helm install nexus-scheduler helm/nexus-scheduler -f my-values.yaml
   install needs no external dependencies or network access to stand
   them up. Set `postgresql.enabled: false` / `redis.enabled: false` to
   bring your own instead.
+- **Clusters with mutating admission webhooks** (Zarf's agent, some
+  policy engines, service meshes): these can silently rewrite every
+  pod's image reference — e.g. Zarf points them at its internal
+  registry (`127.0.0.1:31999/...-zarf-<hash>`), which surfaces as
+  `ImagePullBackOff` on images that exist and pull fine by hand. If
+  your images aren't published to the webhook's registry, exclude the
+  namespace before installing (for Zarf:
+  `kubectl label --overwrite ns <namespace> zarf.dev/agent=ignore`) or relocate
+  the images to the registry the webhook rewrites to. Diagnosis tell:
+  list every init and regular container image and compare the references
+  with what the chart rendered:
+
+  ```bash
+  kubectl get pod <pod> -o \
+    jsonpath='{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}'
+  ```
 - Connection strings are built automatically (with proper URL-encoding)
   from discrete secret fields (username/password/database) rather than
   requiring a hand-composed connection string — see `values.yaml`'s
