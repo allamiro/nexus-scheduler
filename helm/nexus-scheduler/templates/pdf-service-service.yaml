@@ -16,3 +16,10 @@ spec:
     - port: {{ .Values.pdfService.port }}
       targetPort: {{ .Values.pdfService.port }}
       name: http
+    {{- if .Values.pdfService.metrics.enabled }}
+    # Scrape-only listener (issue #118) — the NetworkPolicy admits
+    # pdfService.metrics.scrapeFrom to this port and nothing else.
+    - port: {{ .Values.pdfService.metrics.port }}
+      targetPort: {{ .Values.pdfService.metrics.port }}
+      name: metrics
+    {{- end }}
