@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 # Import only the pure helper without triggering docling model load at
 # import time would be ideal; service.py imports docling at module load,
 # so these run inside the OCR image where that's available.
+import service  # noqa: E402
 from service import _has_extractable_text  # noqa: E402
 
 
@@ -33,6 +34,26 @@ check("empty -> no text", _has_extractable_text("") is False)
 check("real text -> has text", _has_extractable_text("SCANNED MEMO 4402") is True)
 check("text + placeholder -> has text", _has_extractable_text("Invoice 7301\n<!-- image -->") is True)
 check("table markdown -> has text", _has_extractable_text("## ITEM QTY\n\nWIDGET 42") is True)
+
+# DEF-04: OCR_DESCRIBE_IMAGES parses truthy/falsey correctly (the
+# Mistral-path default; a stray "false" must not enable describe).
+def _parse(v):
+    return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+check("describe default 'true' -> on", _parse("true") is True)
+check("describe default 'True ' -> on", _parse("True ") is True)
+check("describe default 'false' -> off", _parse("false") is False)
+check("describe default '' -> off", _parse("") is False)
+check("describe default '0' -> off", _parse("0") is False)
+
+# DEF-04: the describe-budget floor keeps a description attempt viable
+# even when upstream stages consumed most of a tight caller budget.
+check("describe budget floor is positive", service.DESCRIBE_MIN_BUDGET_S > 0)
+check(
+    "describe budget floored to minimum when little remains",
+    max(0.5, service.DESCRIBE_MIN_BUDGET_S) == service.DESCRIBE_MIN_BUDGET_S,
+)
 
 if check.failed:
     print(f"\n{check.failed} FAILED")
