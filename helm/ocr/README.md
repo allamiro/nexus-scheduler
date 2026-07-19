@@ -29,7 +29,7 @@ The OCR image is **not published anywhere** — build it from the repo
 root and put it wherever your cluster pulls from:
 
 ```bash
-docker build -f docker/ocr/Dockerfile -t nexus-scheduler-ocr:<tag> .
+docker build -t nexus-scheduler-ocr:<tag> docker/ocr   # build context is docker/ocr, not repo root
 
 # Connected registry:
 docker tag nexus-scheduler-ocr:<tag> registry.example.internal/nexus-scheduler-ocr:<tag>
