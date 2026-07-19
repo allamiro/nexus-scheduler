@@ -9,7 +9,13 @@
 #
 #   container_memory_working_set_bytes{name}
 #   container_cpu_usage_seconds_total{name}
+#   container_oom_events_total{name}
 #   container_stats_exporter_up
+#
+# OOM kills come from the Engine events API (/events, event=oom), counted
+# since exporter start — cAdvisor's kernel-log source is equally invisible
+# on Docker Desktop, so without this the Infrastructure dashboard's OOM
+# panel could never populate there (issue #126).
 #
 # It is profile-gated OFF by default: on a Linux host cAdvisor works and
 # running both would double-count every sum by (name). Enable it only on
@@ -21,6 +27,8 @@ import http.client
 import json
 import os
 import socket
+import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 DOCKER_SOCK = os.environ.get("DOCKER_SOCK", "/var/run/docker.sock")
@@ -29,6 +37,11 @@ DOCKER_SOCK = os.environ.get("DOCKER_SOCK", "/var/run/docker.sock")
 # workloads into dashboards served with anonymous admin is not okay.
 COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT", "nexus-scheduler")
 PORT = int(os.environ.get("PORT", "9101"))
+# OOM events are counted from this moment on. Re-querying the whole
+# window on every scrape (rather than keeping in-process tallies) makes
+# the counter monotonic for as long as the exporter lives, and a restart
+# is an ordinary counter reset that increase()/rate() already handle.
+START_TIME = int(time.time())
 
 
 class UnixHTTPConnection(http.client.HTTPConnection):
@@ -53,6 +66,53 @@ def docker_get(path):
         conn.close()
 
 
+def docker_get_ndjson(path):
+    # /events responds with one JSON object per line (and closes the
+    # stream itself once `until` is in the past), unlike every other
+    # endpoint this exporter touches.
+    conn = UnixHTTPConnection(DOCKER_SOCK)
+    try:
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        events = []
+        for line in resp.read().splitlines():
+            if not line.strip():
+                continue
+            try:
+                events.append(json.loads(line))
+            except ValueError:
+                continue
+        return events
+    finally:
+        conn.close()
+
+
+def oom_counts():
+    # cAdvisor's container_oom_events_total comes from the kernel log,
+    # which is just as invisible on Docker Desktop as the cgroup tree —
+    # the Engine's event stream is the platform-independent source for
+    # the same fact (State.OOMKilled flips are also visible there as
+    # discrete `oom` events, one per kill).
+    filters = urllib.parse.quote(
+        json.dumps(
+            {
+                "type": ["container"],
+                "event": ["oom"],
+                "label": [f"com.docker.compose.project={COMPOSE_PROJECT}"],
+            }
+        )
+    )
+    until = int(time.time())
+    counts = {}
+    for event in docker_get_ndjson(
+        f"/events?since={START_TIME}&until={max(until, START_TIME)}&filters={filters}"
+    ):
+        name = ((event.get("Actor") or {}).get("Attributes") or {}).get("name")
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def esc(v):
     return str(v).replace("\\", "\\\\").replace('"', '\\"')
 
@@ -62,9 +122,9 @@ def render():
         "# TYPE container_stats_exporter_up gauge",
         "# TYPE container_memory_working_set_bytes gauge",
         "# TYPE container_cpu_usage_seconds_total counter",
+        "# TYPE container_oom_events_total counter",
     ]
     try:
-        import urllib.parse
         filters = urllib.parse.quote(json.dumps({"label": [f"com.docker.compose.project={COMPOSE_PROJECT}"]}))
         containers = docker_get(f"/containers/json?filters={filters}")
     except OSError:
@@ -72,6 +132,19 @@ def render():
         return "\n".join(lines) + "\n"
 
     lines.append("container_stats_exporter_up 1")
+
+    try:
+        ooms = oom_counts()
+    except OSError:
+        ooms = {}
+    # Zero-seed every running container so the OOM panel gets a real
+    # series (a flat 0) instead of "No data" — an absent series and "no
+    # kills yet" must not look identical, that ambiguity is issue #126.
+    for c in containers:
+        name = (c.get("Names") or ["/?"])[0].lstrip("/")
+        ooms.setdefault(name, 0)
+    for name, count in sorted(ooms.items()):
+        lines.append(f'container_oom_events_total{{name="{esc(name)}"}} {count}')
     for c in containers:
         name = (c.get("Names") or ["/?"])[0].lstrip("/")
         try:
