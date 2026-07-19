@@ -363,6 +363,10 @@ services:
       GATEWAY_URL: http://litellm:4000
       GATEWAY_KEY: ${LITELLM_OCR_KEY:-}
       VISION_MODEL: ${OCR_VISION_MODEL:-}
+      # Default for LibreChat chat uploads (the Mistral /v1/ocr path,
+      # which carries no per-request describe flag). The worker's
+      # scheduled-run path passes its own ?describe per call.
+      OCR_DESCRIBE_IMAGES: ${OCR_DESCRIBE_IMAGES:-false}
     mem_limit: 2g
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/healthz')"]

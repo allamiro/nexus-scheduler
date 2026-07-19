@@ -240,6 +240,23 @@ def _remaining(deadline: float, stage: str) -> float:
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "")
 GATEWAY_KEY = os.environ.get("GATEWAY_KEY", "")
 VISION_MODEL = os.environ.get("VISION_MODEL", "")
+# Default describe behavior for callers that carry no per-request flag —
+# specifically the Mistral /v1/ocr path (LibreChat chat uploads), which
+# has no way to pass ?describe. The /process path still honors its
+# explicit per-request describe flag. Only ever takes effect when the
+# gateway trio above is also configured.
+DESCRIBE_IMAGES = os.environ.get("OCR_DESCRIBE_IMAGES", "false").strip().lower() in ("1", "true", "yes", "on")
+# Floor for the vision-description budget. The describe stage runs after
+# OCR/docling; when a caller passes a tight budget_seconds most of it is
+# already spent, leaving too little for a CPU vision model and yielding
+# a silent "unavailable". Guarantee this much for a description attempt
+# so the feature isn't starved by upstream stages (still bounded by the
+# gateway timeout and cancellation).
+DESCRIBE_MIN_BUDGET_S = float(os.environ.get("OCR_DESCRIBE_MIN_BUDGET_S", "60"))
+
+
+def _log(msg: str) -> None:
+    print(f"[ocr] {msg}", file=sys.stderr, flush=True)
 
 # Docling runs in a persistent, killable child process (docling_worker.py)
 # rather than in-process: an in-process conversion cannot be interrupted,
@@ -535,11 +552,22 @@ def _describe_image(
                 body=payload,
                 headers={"Authorization": "Bearer " + GATEWAY_KEY, "Content-Type": "application/json"},
             )
-            body = jsonlib.loads(conn.getresponse().read())
+            resp = conn.getresponse()
+            raw = resp.read()
+            # A non-2xx (a text-only VISION_MODEL yields a 400, a wrong
+            # key a 401) used to vanish into None — the exact silent trap
+            # issue #145 describes. Log it so a misconfigured vision model
+            # is diagnosable instead of just producing empty descriptions.
+            if resp.status >= 300:
+                _log(f"describe: gateway HTTP {resp.status} for model {VISION_MODEL!r}: {raw[:200]!r}")
+                result.append(None)
+                return
+            body = jsonlib.loads(raw)
             result.append(body["choices"][0]["message"]["content"])
-        except Exception:
-            # Description is best-effort garnish; extraction must not
-            # fail because a vision model is absent or slow.
+        except Exception as exc:  # noqa: BLE001 - best-effort garnish
+            # Description must never fail extraction, but a swallowed
+            # error should still leave a breadcrumb (#145).
+            _log(f"describe: gateway call failed for model {VISION_MODEL!r}: {exc!r}")
             result.append(None)
         finally:
             try:
@@ -711,7 +739,13 @@ async def mistral_compatible_ocr(payload: dict, request: Request):
     t_start = time.monotonic()
     deadline = t_start + MAX_PROCESS_SECONDS
     state = {"cancelled": False, "proc": None}
-    process_task = asyncio.create_task(asyncio.to_thread(_process, [upload], False, deadline, state))
+    # LibreChat's Mistral OCR call carries no per-request describe flag,
+    # so this path follows the service-level OCR_DESCRIBE_IMAGES default
+    # (was hardcoded off, which made chat-upload image descriptions
+    # impossible regardless of config — #145).
+    process_task = asyncio.create_task(
+        asyncio.to_thread(_process, [upload], DESCRIBE_IMAGES, deadline, state)
+    )
     try:
         # LibreChat has no explicit cancellation callback for this API. Poll
         # the ASGI connection instead and feed disconnects into the same state
@@ -741,13 +775,22 @@ async def mistral_compatible_ocr(payload: dict, request: Request):
     finally:
         STAGE_DURATION.labels(stage="total").observe(time.monotonic() - t_start)
     result = jsonlib.loads(inner.body)
+    markdown = result["markdown"]
+    # Fold any vision descriptions into the returned markdown so they
+    # actually reach the chat context — they live in a separate field
+    # the Mistral response shape has no slot for, so without this they
+    # were computed (when enabled) and then dropped (#145).
+    descriptions = result.get("descriptions") or []
+    if descriptions:
+        blocks = "\n\n".join(f"**Image description:** {d}" for d in descriptions)
+        markdown = f"{markdown}\n\n{blocks}" if markdown.strip() else blocks
     return JSONResponse({
         # One page entry carrying the whole document's markdown: docling
         # produces document-level markdown, and LibreChat concatenates
         # page markdowns anyway.
         "pages": [{
             "index": 0,
-            "markdown": result["markdown"],
+            "markdown": markdown,
             "images": [],
             "dimensions": None,
         }],
@@ -945,10 +988,16 @@ def _process(
                     # sync handler past the caller's deadline — the
                     # request timeout is capped by what's left of it,
                     # and a cancelled request stops describing at once.
-                    left = deadline - time.monotonic()
-                    if left <= 0 or (state is not None and state["cancelled"]):
+                    if state is not None and state["cancelled"]:
                         break
-                    d = _describe_image(data, mime, timeout=min(240.0, left), state=state)
+                    left = deadline - time.monotonic()
+                    # Guarantee a description attempt a working budget even
+                    # when OCR/docling already consumed most of a tight
+                    # caller budget — otherwise the vision model is starved
+                    # to a silent "unavailable" (#145). Still bounded above
+                    # by the 240s gateway ceiling and by cancellation.
+                    budget = max(left, DESCRIBE_MIN_BUDGET_S)
+                    d = _describe_image(data, mime, timeout=min(240.0, budget), state=state)
                     if d:
                         descriptions.append(d)
                         DESCRIPTIONS.labels(outcome="returned").inc()
