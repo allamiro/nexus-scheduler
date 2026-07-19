@@ -366,6 +366,40 @@ def _docling_spawn() -> subprocess.Popen:
     )
 
 
+def _has_extractable_text(markdown: str) -> bool:
+    # docling emits "<!-- image -->" placeholders for pages it treats as
+    # pictures; strip those (and markdown noise) to decide whether any
+    # real text survived.
+    stripped = re.sub(r"<!--\s*image\s*-->", "", markdown)
+    stripped = re.sub(r"[#*_>`\-\s]", "", stripped)
+    return bool(stripped)
+
+
+def _extract_pdf_text_layer(pdf_path: Path) -> str:
+    # Fallback text extraction straight from the searchable PDF's text
+    # layer (the one ocrmypdf wrote) when docling drops it. pypdfium2 is
+    # already a dependency (docling pulls it); import lazily so a missing
+    # optional never breaks the main path.
+    try:
+        import pypdfium2 as pdfium
+    except Exception:
+        return ""
+    try:
+        doc = pdfium.PdfDocument(str(pdf_path))
+    except Exception:
+        return ""
+    try:
+        pages = []
+        for page in doc:
+            textpage = page.get_textpage()
+            pages.append(textpage.get_text_bounded().strip())
+            textpage.close()
+            page.close()
+        return "\n\n".join(p for p in pages if p)
+    finally:
+        doc.close()
+
+
 def _docling_convert(pdf_path: Path, out_path: Path, deadline: float, state: dict | None = None) -> None:
     global _docling_proc
     # Lock acquisition in short slices, not one long block: a cancelled
@@ -853,7 +887,11 @@ def _process(
             # abandoned request would otherwise burn CPU the longest.
             try:
                 proc = _run_tracked(
-                    ["ocrmypdf", "--skip-text", "--image-dpi", IMAGE_DPI, "--output-type", "pdf", str(src), str(searchable)],
+                    # --rotate-pages: correct 90/180/270 scans using
+                    # Tesseract's OSD (tesseract-ocr-osd) — without it a
+                    # rotated upload OCRs to garbage (E2E finding). Needs
+                    # the osd traineddata, installed in the image.
+                    ["ocrmypdf", "--skip-text", "--rotate-pages", "--image-dpi", IMAGE_DPI, "--output-type", "pdf", str(src), str(searchable)],
                     state,
                     _remaining(deadline, "ocrmypdf"),
                 )
@@ -885,6 +923,18 @@ def _process(
         with STAGE_DURATION.labels(stage="docling").time():
             _docling_convert(searchable, md_out, deadline, state)
         markdown = md_out.read_text(encoding="utf-8")
+
+        # docling's layout model classifies short/strip-geometry pages
+        # (screen-density image uploads become ~4in pages at 300dpi) as
+        # pictures and emits only "<!-- image -->", discarding the text
+        # layer ocrmypdf already produced. When docling yields no
+        # extractable text but the searchable PDF does, fall back to that
+        # text layer rather than returning an empty extraction (issue
+        # found in E2E: PNG/JPEG/rotated/low-res uploads lost all text).
+        if not _has_extractable_text(markdown):
+            fallback = _extract_pdf_text_layer(searchable)
+            if fallback:
+                markdown = fallback
 
         descriptions = []
         if describe:
