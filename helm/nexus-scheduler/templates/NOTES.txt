@@ -6,15 +6,21 @@ exist in this namespace (none are created by this chart — REQUIREMENTS
 §9.1/§10):
 
   - {{ .Values.secrets.appSecretName }}
-      keys: SESSION_SECRET, API_KEY_ENCRYPTION_KEY,
-            BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD
-      (the built-in break-glass admin's password is re-synced from
+      keys: SESSION_SECRET (>= 32 chars), API_KEY_ENCRYPTION_KEY (>= 32 chars),
+            BOOTSTRAP_ADMIN_EMAIL (valid email), BOOTSTRAP_ADMIN_PASSWORD (>= 12 chars)
+      (formats are enforced by the apps' own config validation — a
+      too-short value crashloops the pod with "Invalid environment
+      configuration". The break-glass admin's password is re-synced from
       BOOTSTRAP_ADMIN_PASSWORD on every API pod start — rotate it here
       and roll the Deployment to recover admin access)
 {{- if .Values.oidc.issuerUrl }}
   - {{ .Values.secrets.oidcSecretName }}
       keys: OIDC_CLIENT_SECRET
 {{- end }}
+
+For a dev cluster, scripts/create-dev-secrets.sh generates these
+Secrets with valid formats in one command. Never use it for production
+(REQUIREMENTS §9.1).
   - {{ .Values.postgresql.auth.existingSecretName }}
       keys: username, password, database
       (DATABASE_URL is built automatically and URL-encoded at pod start
