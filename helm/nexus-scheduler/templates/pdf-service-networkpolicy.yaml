@@ -34,6 +34,16 @@ spec:
               app.kubernetes.io/component: worker
       ports:
         - port: {{ .Values.pdfService.port }}
+    {{- if and .Values.pdfService.metrics.enabled .Values.pdfService.metrics.scrapeFrom }}
+    # The metrics port is a separate, scrape-only listener (issue #118):
+    # createMetricsApp serves GET /metrics and nothing else, so admitting
+    # a scraper here admits it to counters, not to Chromium. The render
+    # port's rule above is deliberately untouched.
+    - from:
+        {{- toYaml .Values.pdfService.metrics.scrapeFrom | nindent 8 }}
+      ports:
+        - port: {{ .Values.pdfService.metrics.port }}
+    {{- end }}
   # No egress rules at all: `renderHtmlToPdf` only ever calls
   # `page.setContent()` on an already-built HTML string this process
   # generated itself — it never navigates to a URL, local or remote —
