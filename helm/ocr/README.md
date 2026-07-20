@@ -95,8 +95,30 @@ Non-negotiables enforced at render time:
 
 - `replicas` must be 1 — the Mistral files API keeps per-pod state; a
   second replica would 404 half the signed-URL lookups.
-- `fileStoreMaxBytes` ≥ 15 MiB (the per-file limit).
-- `gateway.*` is all-or-nothing (see §4).
+- `fileStoreMaxBytes` ≥ `fileMaxBytes` — the store has to hold at least
+  one file of the maximum permitted size.
+- `processMaxTotalBytes` ≥ `fileMaxBytes` — otherwise a single permitted
+  file is refused by the aggregate limit and the 413 names the wrong
+  ceiling.
+- `gateway.*` is all-or-nothing, and `gateway.describeImages` requires
+  `gateway.url` (see §4).
+
+### Every knob, and which caller it affects
+
+| value | env var | default | affects |
+|---|---|---|---|
+| `imageDpi` | `IMAGE_DPI` | 300 | both paths — photos/PNGs often carry no DPI, and ocrmypdf refuses input without one |
+| `maxProcessSeconds` | `OCR_MAX_PROCESS_SECONDS` | 900 | both paths — hard ceiling on one extraction. Raise for large scans on CPU; keep below any proxy timeout in front of the service |
+| `fileMaxBytes` | `OCR_FILE_MAX_BYTES` | 15 MiB | both paths — per-upload limit, returned as 413 |
+| `fileStoreMaxBytes` | `OCR_FILE_STORE_MAX_BYTES` | 256 MiB | LibreChat uploads — aggregate retained bytes in the Mistral-compatible file store |
+| `processMaxFiles` | `OCR_PROCESS_MAX_FILES` | 10 | Nexus Scheduler attachments — files per `/process` call |
+| `processMaxTotalBytes` | `OCR_PROCESS_MAX_TOTAL_BYTES` | 50 MiB | Nexus Scheduler attachments — total bytes per call |
+| `gateway.url` / `.existingSecret` / `.visionModel` | `GATEWAY_URL` / `GATEWAY_KEY` / `VISION_MODEL` | empty | descriptions (§4) |
+| `gateway.describeImages` | `OCR_DESCRIBE_IMAGES` | false | **LibreChat uploads only** — see §4 |
+| `gateway.minBudgetSeconds` | `OCR_DESCRIBE_MIN_BUDGET_S` | 60 | descriptions — floor below which the describe stage is skipped rather than started and abandoned |
+
+Defaults are unchanged from the compiled-in values they replaced, so an
+install that sets none of these behaves exactly as before.
 
 ## 2. Wire the scheduler's worker to OCR
 
@@ -166,9 +188,18 @@ can answer about the document.
 
 ## 4. Optional: vision descriptions of image inputs (issue #145)
 
-`describeImages` / `OCR_DESCRIBE_IMAGES` sends image attachments to a
-**multimodal** model for a one-paragraph description that is appended
-to the extracted text. The trap to avoid: the default model set
+Descriptions send an image to a **multimodal** model for a one-paragraph
+summary appended to the extracted text. **Each caller has its own
+switch**, because the two request shapes differ:
+
+| caller | switch | where |
+|---|---|---|
+| Nexus Scheduler attachments | `ocr.describeImages` | the **nexus-scheduler** chart — the worker passes `?describe=` per call |
+| LibreChat chat uploads | `gateway.describeImages` | **this** chart — LibreChat's Mistral-shaped request carries no per-request flag, so the service env var is the only control |
+
+Setting one does not enable the other. Enabling descriptions for chat
+uploads and leaving `ocr.describeImages: "false"` is a valid combination,
+and vice versa. The trap to avoid: the default model set
 (gemma3:1b, codegemma:2b, phi4-mini-reasoning) is **text-only**.
 Pointing the gateway at a text model doesn't fail loudly — descriptions
 are best-effort, so you get silently missing descriptions and LiteLLM
@@ -219,8 +250,21 @@ Three steps, all or nothing:
    The egress block must describe the pods `gateway.url` actually
    resolves to — a NetworkPolicy cannot derive a selector from a URL.
 
-Then set `ocr.describeImages: "true"` in the nexus-scheduler chart
-(and/or `OCR_DESCRIBE_IMAGES=true` in Compose).
+Then turn it on for whichever caller you want (see the table at the top
+of this section — they are independent):
+
+```yaml
+# Nexus Scheduler attachments — in the nexus-scheduler chart:
+ocr:
+  describeImages: "true"
+
+# LibreChat chat uploads — in THIS chart:
+gateway:
+  describeImages: true
+```
+
+In Compose both are the same variable, `OCR_DESCRIBE_IMAGES=true`, because
+one service instance serves both callers there.
 
 ## 5. Observability
 

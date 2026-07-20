@@ -1271,6 +1271,7 @@ to a list of recipients. Requires SMTP to be configured
 See also [Runs, output & PDF reports](/help/runs).
 `,
   },
+
 ];
 
 export function findKbArticle(slug: string): KbArticle | undefined {
