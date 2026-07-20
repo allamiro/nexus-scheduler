@@ -17,15 +17,25 @@ import { recordAuditEvent, diffChangedFields } from "../audit.js";
 import type { AppConfig } from "../config.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-const LIST_SELECT = {
+// What a non-admin is allowed to see. A Job owner picks a destination
+// from this list, and that needs a name and a URL — nothing else. In
+// particular NOT `headers`, which holds the receiving system's auth
+// token (see webhookHeadersSchema): handing that to every authenticated
+// session, VIEW role included, leaks a third party's credential.
+const PICKER_SELECT = {
   id: true,
   name: true,
   url: true,
+  active: true,
+} as const;
+
+// The allow-list management view. Admin-only routes return this.
+const LIST_SELECT = {
+  ...PICKER_SELECT,
   headers: true,
   notifyOnSuccess: true,
   notifyOnFailure: true,
   notifyOnCancelled: true,
-  active: true,
   createdAt: true,
 } as const;
 
@@ -49,7 +59,7 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
     const isAdmin = req.session.user!.role === "ADMIN";
     const destinations = await prisma.webhookDestination.findMany({
       where: isAdmin ? undefined : { active: true },
-      select: LIST_SELECT,
+      select: isAdmin ? LIST_SELECT : PICKER_SELECT,
       orderBy: { name: "asc" },
     });
     res.json(destinations);

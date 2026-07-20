@@ -44,6 +44,9 @@ async function resetDb() {
   await prisma.run.deleteMany({});
   await prisma.schedule.deleteMany({});
   await prisma.jobWebhookDestination.deleteMany({});
+  // The destinations themselves were never reset — rows leaked across
+  // tests in the same file. Harmless until a test asserted on the list.
+  await prisma.webhookDestination.deleteMany({});
   await prisma.job.deleteMany({});
   await prisma.promptVersion.deleteMany({});
   await prisma.prompt.deleteMany({});
@@ -97,6 +100,60 @@ describe("route-level authorization (§45)", () => {
     await runsQueue.close();
     await redisClient.quit();
     await prisma.$disconnect();
+  });
+
+  describe("webhook destination secrets (§27)", () => {
+    // The custom-headers map holds the *receiving* system's auth token
+    // (webhookHeadersSchema calls it out as such). Non-admins can list
+    // destinations on purpose — a Job owner has to pick one — but the
+    // list they get must not carry that credential.
+    async function makeDestination() {
+      return prisma.webhookDestination.create({
+        data: {
+          name: "Ticketing",
+          url: "http://ticketing.internal/hook",
+          headers: { "X-Api-Key": "shared-secret-123" },
+          encryptedHmacSecret: encryptSecret("s", config.API_KEY_ENCRYPTION_KEY),
+        },
+      });
+    }
+
+    for (const role of ["VIEW", "EDITOR"] as const) {
+      it(`does not expose custom headers to a ${role} user`, async () => {
+        await makeDestination();
+        const agent = await loginAs(app, await makeUser(role));
+
+        const res = await agent.get("/api/webhook-destinations");
+
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveLength(1);
+        expect(res.body[0]).not.toHaveProperty("headers");
+        // Belt and braces: the value must not appear anywhere in the
+        // payload, however the shape changes later.
+        expect(JSON.stringify(res.body)).not.toContain("shared-secret-123");
+        // The picker still gets what it needs.
+        expect(res.body[0]).toMatchObject({ name: "Ticketing", url: "http://ticketing.internal/hook" });
+      });
+    }
+
+    it("still exposes headers to an ADMIN, who manages the allow-list", async () => {
+      await makeDestination();
+      const agent = await loginAs(app, await makeUser("ADMIN"));
+
+      const res = await agent.get("/api/webhook-destinations");
+
+      expect(res.status).toBe(200);
+      expect(res.body[0].headers).toEqual({ "X-Api-Key": "shared-secret-123" });
+    });
+
+    it("never exposes the HMAC secret, to anyone", async () => {
+      await makeDestination();
+      for (const role of ["VIEW", "EDITOR", "ADMIN"] as const) {
+        const agent = await loginAs(app, await makeUser(role));
+        const res = await agent.get("/api/webhook-destinations");
+        expect(JSON.stringify(res.body)).not.toContain("encryptedHmacSecret");
+      }
+    });
   });
 
   describe("IDOR: API key ownership on Job create/update", () => {
