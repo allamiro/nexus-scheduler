@@ -33,6 +33,26 @@ worker:
 pdfService:
   replicaCount: 2
   port: 4100
+  # Dedicated metrics listener (issue #118). The render port's NetworkPolicy
+  # admits only api/worker, and an L3/L4 rule cannot tell GET /metrics from
+  # POST /render/* — so on a shared port, admitting a scraper means admitting
+  # it to Chromium. Enabling this starts a second, scrape-only listener in the
+  # pod (it cannot render), exposes it as the Service's `metrics` port, and
+  # admits `scrapeFrom` peers to that port only; the render port's
+  # api/worker-only rule is untouched. With observability.serviceMonitor.enabled
+  # also on, the chart then emits a pdf-service ServiceMonitor targeting it.
+  metrics:
+    enabled: false
+    port: 9464
+    # NetworkPolicyPeer list (verbatim) allowed to reach the metrics port.
+    # Empty means the listener runs but nothing is admitted to it — set this
+    # to your scraper's identity, e.g. kube-prometheus-stack in `monitoring`:
+    #   scrapeFrom:
+    #     - namespaceSelector:
+    #         matchLabels: { kubernetes.io/metadata.name: monitoring }
+    #       podSelector:
+    #         matchLabels: { app.kubernetes.io/name: prometheus }
+    scrapeFrom: []
   resources:
     requests: { cpu: "100m", memory: "384Mi" }
     limits: { cpu: "1", memory: "1Gi" }
@@ -255,15 +275,12 @@ observability:
     # is the common one) and will silently ignore this object without it —
     # which looks exactly like the app not exposing metrics.
     labels: {}
-    # pdf-service is not scraped, and cannot safely be. It is the one
-    # component REQUIREMENTS §2.5 isolates outright, and its NetworkPolicy is
-    # not one control among several — app.ts says so itself: "access control is
-    # NetworkPolicy, not session/API-key auth". Its /metrics and its
-    # POST /render/* endpoints are the same Express listener on the same port,
-    # and a NetworkPolicy cannot tell them apart, so any rule that lets
-    # Prometheus in also lets that namespace drive Chromium. Doing it safely
-    # needs a dedicated metrics listener — an application change, not a chart
-    # one. api and worker are unaffected and are scraped normally.
+    # pdf-service is scraped only when pdfService.metrics.enabled is also on:
+    # its render port stays api/worker-only (a NetworkPolicy cannot tell
+    # GET /metrics from POST /render/* on a shared listener), so the scrape
+    # goes through the dedicated scrape-only listener that flag starts — see
+    # the pdfService.metrics block above. api and worker are scraped normally
+    # either way.
     #
     # Applied at ingestion, before storage — the place to drop a metric family
     # this cluster does not want to pay to keep, or to rewrite a label whose

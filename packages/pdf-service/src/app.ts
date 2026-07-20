@@ -125,3 +125,28 @@ export function createApp(config: PdfServiceConfig, logger: Logger, metrics: Met
 
   return app;
 }
+
+// The scrape-only counterpart to createApp, for PDF_SERVICE_METRICS_PORT
+// (issue #118): in Kubernetes, /metrics on the render port is
+// unreachable by design — the NetworkPolicy admits only api/worker, and
+// being L3/L4 it could not admit a scraper without also admitting it to
+// POST /render/*. A listener that cannot render, on its own port, is
+// something a NetworkPolicy *can* reason about, so the chart opens this
+// port to the configured scraper and nothing else. No shared-secret
+// check here: the register holds operational counters, and the secret
+// exists to guard the render capability, not them.
+export function createMetricsApp(metrics: Metrics, logger: Logger): Express {
+  const app = express();
+  app.get("/metrics", asyncHandler(async (_req, res) => {
+    res.setHeader("Content-Type", metrics.register.contentType);
+    res.send(await metrics.register.metrics());
+  }));
+  // Same reason the main app has one: without error-handling middleware,
+  // a throw from register.metrics() reaches Express's default handler,
+  // which serializes err.stack into the response outside production.
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    logger.error({ err }, "metrics render failed");
+    res.status(500).json({ error: "internal error" });
+  });
+  return app;
+}

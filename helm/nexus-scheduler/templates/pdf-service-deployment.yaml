@@ -23,11 +23,12 @@ spec:
         # annotation would advertise a target that can never answer, and a
         # permanently-down target pages someone about a policy decision.
         #
-        # It is not an oversight and not a missing feature: /metrics and
-        # POST /render/* are the same listener on the same port, so nothing
-        # can admit the scrape without also admitting anything in that
-        # namespace to drive Chromium. Collecting it needs a dedicated
-        # metrics port — an application change, tracked in schuecl#118.
+        # That stays true even with pdfService.metrics.enabled: the
+        # annotation path would point the scrape at the render port, which
+        # remains api/worker-only by design. Scraping this pod goes through
+        # the dedicated metrics port (issue #118) — the Service's `metrics`
+        # port, admitted by pdfService.metrics.scrapeFrom and targeted by
+        # the ServiceMonitor.
     spec:
       serviceAccountName: {{ include "nexus-scheduler.serviceAccountName" . }}
       securityContext:
@@ -40,6 +41,9 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - containerPort: {{ .Values.pdfService.port }}
+            {{- if .Values.pdfService.metrics.enabled }}
+            - containerPort: {{ .Values.pdfService.metrics.port }}
+            {{- end }}
           env:
             - name: NODE_ENV
               value: "production"
@@ -47,6 +51,10 @@ spec:
               value: {{ .Values.pdfService.port | quote }}
             - name: LOG_LEVEL
               value: "info"
+            {{- if .Values.pdfService.metrics.enabled }}
+            - name: PDF_SERVICE_METRICS_PORT
+              value: {{ .Values.pdfService.metrics.port | quote }}
+            {{- end }}
           livenessProbe:
             httpGet: { path: /healthz, port: {{ .Values.pdfService.port }} }
             initialDelaySeconds: 5
