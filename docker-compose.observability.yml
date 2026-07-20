@@ -17,21 +17,21 @@ services:
   # connections, so strict start ordering isn't needed. (Mimir's ingester
   # ring takes ~40s to form before /ready returns 200.)
   mimir:
-    image: grafana/mimir:latest
+    image: grafana/mimir:3.1.3
     command: ["-config.file=/etc/mimir/mimir.yaml"]
     volumes:
       - ./observability/mimir/mimir.yaml:/etc/mimir/mimir.yaml:ro
       - mimir-data:/data
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.3
     command: ["-config.file=/etc/loki/loki.yaml"]
     volumes:
       - ./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
       - loki-data:/loki
 
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.18.0
     # default for everything else, ocr-net to reach the OCR service's
     # /metrics — that network is internal-only by design, so the scraper
     # must come to it. Declared below as well so this overlay stands
@@ -104,7 +104,7 @@ services:
   # this overlay stays usable against either compose file. Reuses the
   # litellm image purely for its python3 — the exporter is stdlib-only.
   litellm-exporter:
-    image: ghcr.io/berriai/litellm-database:main-stable
+    image: ghcr.io/berriai/litellm-database:v1.93.0
     entrypoint: ["python3", "/app/exporter.py"]
     environment:
       LITELLM_URL: http://litellm:4000
@@ -123,7 +123,7 @@ services:
   # works and running both would double-count. Enable with:
   #   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile docker-desktop up -d
   container-stats-exporter:
-    image: ghcr.io/berriai/litellm-database:main-stable
+    image: ghcr.io/berriai/litellm-database:v1.93.0
     profiles: ["docker-desktop"]
     entrypoint: ["python3", "/app/exporter.py"]
     environment:
@@ -135,7 +135,7 @@ services:
     mem_limit: 256m
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.1.0
     environment:
       # Dev-only convenience: anonymous admin so the stack is usable
       # immediately. Never do this outside a local dev compose.
