@@ -18,7 +18,7 @@ global:
 alloy:
   image:
     repository: grafana/alloy
-    tag: v1.10.2
+    tag: v1.18.0
     digest: ""  # "sha256:..." — takes precedence over tag when set
   resources:
     requests: {cpu: 100m, memory: 256Mi}
@@ -45,7 +45,7 @@ alloy:
 mimir:
   image:
     repository: grafana/mimir
-    tag: "2.14.2"
+    tag: "3.1.3"
     digest: ""
   persistence:
     size: 10Gi
@@ -59,7 +59,7 @@ mimir:
 loki:
   image:
     repository: grafana/loki
-    tag: "3.4.2"
+    tag: "3.7.3"
     digest: ""
   persistence:
     size: 10Gi
@@ -72,7 +72,7 @@ loki:
 grafana:
   image:
     repository: grafana/grafana
-    tag: "11.5.2"
+    tag: "13.1.0"
     digest: ""
   # Unlike the Compose overlay (anonymous admin, dev-only), Kubernetes
   # installs get a real admin login. Set adminPassword, or leave empty
@@ -123,8 +123,11 @@ integrations:
 litellmExporter:
   enabled: false
   image:
+    # Pinned to a released version, not the moving `main-stable` tag:
+    # an air-gapped mirror cannot reproduce a tag whose contents change,
+    # and a rollback by re-pulling the same tag is impossible.
     repository: ghcr.io/berriai/litellm-database
-    tag: main-stable
+    tag: v1.93.0
     digest: ""
   litellmUrl: http://litellm:4000
   # Name of an existing Secret with key `masterKey` holding
