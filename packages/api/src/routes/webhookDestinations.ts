@@ -231,6 +231,13 @@ export function createWebhookDestinationsRouter(config: AppConfig): Router {
         method: "POST",
         headers: buildWebhookDeliveryHeaders(destination.headers, signature),
         body: rawBody,
+        // Same reasoning as the worker's delivery path: following a
+        // redirect would let the destination operator choose which host
+        // receives the signed body and the receiver's auth header. A
+        // 3xx arrives here as an ordinary non-ok response, so the
+        // existing check reports it as a failed test-send — which is
+        // what the admin needs to see.
+        redirect: "manual",
         signal: AbortSignal.timeout(10_000),
       });
       if (!response.ok) {
