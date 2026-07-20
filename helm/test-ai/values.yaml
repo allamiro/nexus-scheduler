@@ -5,6 +5,19 @@
 # preserved across upgrades) unless you point at existing ones.
 global:
   imageRegistry: ""
+  # Unset by default — no behavior change. See templates/_helpers.tpl's
+  # test-ai.dnsConfig comment (issue #215): on a cluster whose nodes
+  # carry a corporate search domain that resolves a wildcard, the
+  # default ndots:5 silently hijacks outbound pulls (Ollama's model
+  # registry, LiteLLM's cost-map fetch, LibreChat's image) to an
+  # internal host, surfacing as a confusing TLS error rather than a DNS
+  # one. ndots:1 is safe here: in-cluster Service names are still
+  # resolved correctly through the explicit search entries.
+  #   dnsConfig:
+  #     options:
+  #       - name: ndots
+  #         value: "1"
+  dnsConfig: {}
 
 ollama:
   image:
@@ -61,11 +74,13 @@ litellm:
     # outside the cluster; the master key is the login.
     type: ClusterIP
   resources:
-    requests: {cpu: 100m, memory: 512Mi}
-    # The -database image runs its Prisma migrations at startup, which
-    # spikes well past steady-state — 1Gi gets the container OOM-killed
-    # before it ever serves (observed on a real install).
-    limits: {memory: 2Gi}
+    # 2Gi was itself observed OOM-killed with even one model configured
+    # (issue #216) — 512Mi/2Gi undersized both the steady-state working
+    # set and the request, which risks scheduling onto a node that
+    # can't actually hold it. 1Gi/3Gi is the config verified end-to-end
+    # against a real Ollama completion; not a tuned figure, a floor.
+    requests: {cpu: 100m, memory: 1Gi}
+    limits: {memory: 3Gi}
 
 litellmPostgres:
   image:
