@@ -57,19 +57,6 @@ pdfService:
     requests: { cpu: "100m", memory: "384Mi" }
     limits: { cpu: "1", memory: "1Gi" }
 
-# The OCR pipeline service (#109), deployed by the separate helm/ocr
-# chart. Point serviceUrl at its Service (e.g.
-# http://ocr.ocr-namespace.svc:4200) and add this release's namespace to
-# that chart's networkPolicy.clientNamespaces, or its ingress policy
-# will drop the worker's calls. Empty = jobs with attachments run
-# without extraction, with a warning per run.
-ocr:
-  serviceUrl: ""
-  describeImages: "false"
-  # Complete user-prompt ceiling for runs with attachments. 80k chars is
-  # roughly 20k tokens, leaving headroom in the bundled 32k-context model.
-  maxPromptChars: 80000
-
 frontend:
   replicaCount: 2
   port: 8080
@@ -85,11 +72,6 @@ ingress:
   enabled: false
   className: ""
   host: "nexus-scheduler.example.mil"
-  # Attachment uploads (#109) are base64 JSON up to ~20MB; ingress-nginx
-  # would otherwise cut them off at its 1m default. Adjust or replace for
-  # other controllers.
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: 21m
   tls:
     enabled: false
     secretName: ""
@@ -168,9 +150,9 @@ secrets:
   # so rotating it here and rolling the Deployment is how an operator
   # recovers admin access.)
   appSecretName: "nexus-scheduler-app"
-  # Keys expected: OIDC_CLIENT_SECRET. Only mounted when
-  # oidc.issuerUrl is set — an OIDC-disabled install doesn't need the
-  # Secret to exist (see api-deployment.yaml's conditional secretRef).
+  # Keys expected: OIDC_CLIENT_SECRET. Only mounted when oidc.issuerUrl is
+  # set — an SSO-less install does not need this Secret to exist at all
+  # (api-deployment.yaml gates the secretRef on the same condition).
   oidcSecretName: "nexus-scheduler-oidc"
   # DATABASE_URL/REDIS_URL are no longer separate pre-composed secrets —
   # the app builds both itself at pod start from
