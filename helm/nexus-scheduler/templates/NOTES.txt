@@ -17,10 +17,6 @@ exist in this namespace (none are created by this chart — REQUIREMENTS
   - {{ .Values.secrets.oidcSecretName }}
       keys: OIDC_CLIENT_SECRET
 {{- end }}
-
-For a dev cluster, scripts/create-dev-secrets.sh generates these
-Secrets with valid formats in one command. Never use it for production
-(REQUIREMENTS §9.1).
   - {{ .Values.postgresql.auth.existingSecretName }}
       keys: username, password, database
       (DATABASE_URL is built automatically and URL-encoded at pod start
@@ -30,6 +26,10 @@ Secrets with valid formats in one command. Never use it for production
       by hand.)
   - {{ .Values.redis.auth.existingSecretName }}
       keys: password
+
+For a dev cluster, scripts/create-dev-secrets.sh generates these with
+valid formats in one command. Never use it for production
+(REQUIREMENTS §9.1).
       (REDIS_URL is built automatically the same way — see values.yaml's
       redis.auth comment.)
 
