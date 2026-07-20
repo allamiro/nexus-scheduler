@@ -93,6 +93,24 @@ Override any of them in `.env` if you edit the realm:
 `OIDC_CLIENT_SECRET`, `LIBRECHAT_OIDC_CLIENT_SECRET`,
 `GRAFANA_OIDC_CLIENT_SECRET`.
 
+## Verify it end to end
+
+`scripts/verify-keycloak-sso.py` drives a real authorization-code flow
+for each client — discovery, authorize, login POST, redirect with code,
+token exchange, role decode — so a broken issuer or role mapping fails
+loudly instead of turning into a confusing browser error later:
+
+```bash
+docker run --rm --network "$(basename $PWD)_default" \
+  -e KC_BASE=http://keycloak:${KEYCLOAK_PORT:-8081} \
+  -v "$PWD/scripts/verify-keycloak-sso.py:/t.py:ro" \
+  python:3.12-slim python3 /t.py
+```
+
+It covers every scheduler role tier (including the no-role user landing
+on VIEW), Grafana's three roles, a LibreChat sign-in, and that a wrong
+password yields no authorization code.
+
 ## Notes and limits
 
 - The realm is re-imported on every start (`start-dev --import-realm`,
