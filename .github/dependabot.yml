@@ -12,3 +12,34 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+
+  # Container images had no ecosystem at all, which is why the chart's
+  # pins drifted unnoticed: Grafana two majors behind, Mimir one, and the
+  # LiteLLM exporter on a moving `main-stable` tag. npm stayed current
+  # the whole time because it was the only thing being watched.
+  #
+  # Dockerfiles are one entry per directory — Dependabot does not recurse.
+  - package-ecosystem: docker
+    directory: "/docker/ocr"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/docker/syslog-test"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/packages/api"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/packages/frontend"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/packages/pdf-service"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/packages/worker"
+    schedule:
+      interval: weekly
