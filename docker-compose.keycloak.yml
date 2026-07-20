@@ -1,0 +1,86 @@
+# Keycloak SSO overlay — one realm, one client per app.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up -d
+#   (or `make up-sso`; add -f docker-compose.observability.yml and
+#    -f docker-compose.keycloak-observability.yml for Grafana SSO too)
+#
+# WITHOUT this file the stack behaves exactly as before: OIDC_* is unset,
+# so the api serves local break-glass auth and LibreChat uses its own
+# local registration. This overlay is the only thing that turns SSO on —
+# nothing in the base stack depends on Keycloak.
+#
+# ONE-TIME HOST SETUP (required): add to /etc/hosts
+#
+#     127.0.0.1 keycloak
+#
+# Why: the OIDC issuer must be byte-identical for the browser (which
+# follows redirects to Keycloak) and for the api/librechat containers
+# (which fetch discovery and exchange tokens). A container cannot reach
+# the host's "localhost", and the host cannot resolve Docker's internal
+# DNS — so both sides use the single name `keycloak` on the SAME port
+# inside and out (8081), and the host needs that one line to resolve it.
+# A mismatched issuer fails token validation with a confusing error, so
+# this is enforced rather than papered over.
+#
+# The realm, its three clients, their roles and four demo users are
+# imported from docker/keycloak/realm-nexus-scheduler.json on first
+# start. Client secrets in that file are FIXED DEV VALUES — never reuse
+# this realm outside local development.
+services:
+  keycloak:
+    # start-dev + --import-realm: in-memory dev database, realm applied
+    # on boot. Re-importing on every start keeps the realm reproducible;
+    # changes made in the admin console do not survive a recreate, which
+    # is deliberate for a dev stand-in.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Serve on the same port published to the host so one URL works
+      # from both sides (see the /etc/hosts note above).
+      KC_HTTP_PORT: "${KEYCLOAK_PORT:-8081}"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    # !override, not a plain list: compose MERGES sequence fields, so
+    # without it the base file's "host:8080" mapping survives alongside
+    # this one and the two fight over the same host port.
+    ports: !override
+      - "${KEYCLOAK_PORT:-8081}:${KEYCLOAK_PORT:-8081}"
+    volumes:
+      - ./docker/keycloak/realm-nexus-scheduler.json:/opt/keycloak/data/import/realm.json:ro
+    healthcheck:
+      # Keycloak 25 exposes health on the management port (9000).
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/${KEYCLOAK_PORT:-8081} && echo -e 'GET /realms/nexus-scheduler HTTP/1.1\\nHost: keycloak\\nConnection: close\\n\\n' >&3 && cat <&3 | head -1 | grep -q '200 OK'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  api:
+    environment:
+      # Same issuer string the browser is redirected to — see the header.
+      OIDC_ISSUER_URL: http://keycloak:${KEYCLOAK_PORT:-8081}/realms/nexus-scheduler
+      OIDC_CLIENT_ID: nexus-scheduler
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-only-nexus-scheduler-secret}
+      OIDC_REDIRECT_URI: http://localhost:${APP_PORT:-8080}/auth/callback
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  librechat:
+    environment:
+      # LibreChat's OpenID login. ALLOW_SOCIAL_LOGIN is what surfaces the
+      # button; local email registration stays available unless you also
+      # set ALLOW_REGISTRATION=false in docker/librechat/.env.
+      ALLOW_SOCIAL_LOGIN: "true"
+      OPENID_ISSUER: http://keycloak:${KEYCLOAK_PORT:-8081}/realms/nexus-scheduler
+      OPENID_CLIENT_ID: librechat
+      OPENID_CLIENT_SECRET: ${LIBRECHAT_OIDC_CLIENT_SECRET:-dev-only-librechat-secret}
+      OPENID_CALLBACK_URL: /oauth/openid/callback
+      OPENID_SCOPE: "openid profile email"
+      OPENID_SESSION_SECRET: ${LIBRECHAT_OIDC_SESSION_SECRET:-dev-only-librechat-session-secret}
+      OPENID_BUTTON_LABEL: "Sign in with Keycloak"
+    depends_on:
+      keycloak:
+        condition: service_healthy

@@ -5,13 +5,18 @@
 COMPOSE  := docker compose
 BASE     := -f docker-compose.yml
 OBS      := -f docker-compose.observability.yml
+# Keycloak SSO overlays. SSO is opt-in: without these the stack runs on
+# local auth exactly as before. The observability half is separate
+# because `grafana` only exists once OBS is layered on.
+SSO      := -f docker-compose.keycloak.yml
+SSO_OBS  := -f docker-compose.keycloak-observability.yml
 # Optional local-only tweaks (gitignored). Compose auto-loads
 # docker-compose.override.yml only when invoked with NO -f flags — every
 # target here uses explicit -f, so the override must be re-listed
 # explicitly or it silently stops applying.
 OVERRIDE := $(shell test -f docker-compose.override.yml && echo -f docker-compose.override.yml)
 
-.PHONY: help env up up-obs up-obs-desktop down down-obs logs ps verify smoke \
+.PHONY: help env up up-obs up-obs-desktop up-sso up-obs-sso down down-obs down-sso logs ps verify smoke \
         test-api test-worker test-frontend test
 
 help: ## List targets
@@ -28,6 +33,15 @@ up-obs: ## App stack + observability overlay (Grafana/Alloy/Mimir/Loki)
 
 up-obs-desktop: ## up-obs for Docker Desktop (adds the container-stats-exporter profile)
 	$(COMPOSE) $(BASE) $(OBS) $(OVERRIDE) --profile docker-desktop up -d --build
+
+up-sso: ## App stack + Keycloak SSO (needs `127.0.0.1 keycloak` in /etc/hosts)
+	$(COMPOSE) $(BASE) $(SSO) $(OVERRIDE) up -d --build
+
+up-obs-sso: ## App + observability + Keycloak SSO for the app, LibreChat and Grafana
+	$(COMPOSE) $(BASE) $(OBS) $(SSO) $(SSO_OBS) $(OVERRIDE) up -d --build
+
+down-sso: ## Stop the SSO-enabled stack (volumes kept)
+	$(COMPOSE) $(BASE) $(OBS) $(SSO) $(SSO_OBS) $(OVERRIDE) down
 
 down: ## Stop the app stack (volumes kept)
 	$(COMPOSE) $(BASE) $(OVERRIDE) down

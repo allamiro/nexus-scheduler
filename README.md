@@ -312,6 +312,22 @@ Kubernetes the two callers have **separate** description switches
 OCR chart), because they are separate releases. In Compose one service
 instance serves both, so `OCR_DESCRIBE_IMAGES` covers both.
 
+### Keycloak SSO (optional)
+
+One realm, one client per app — the scheduler, LibreChat and Grafana all
+authenticate against the bundled Keycloak, with roles mapped per client:
+
+```bash
+make up-sso       # app stack + Keycloak
+make up-obs-sso   # + observability, and Grafana SSO too
+```
+
+Opt-in by design: without these overlays nothing changes — the scheduler
+serves local break-glass auth, LibreChat uses local registration, and
+Grafana stays anonymous. Needs a one-time `127.0.0.1 keycloak` line in
+`/etc/hosts` so the browser and the containers resolve the same issuer.
+Full setup, demo users and role mapping: [docs/keycloak-sso.md](docs/keycloak-sso.md).
+
 ### Observability stack (optional)
 
 The app ships Prometheus metrics; this brings up somewhere to put them —
