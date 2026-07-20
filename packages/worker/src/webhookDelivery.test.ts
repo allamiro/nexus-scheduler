@@ -228,6 +228,99 @@ describe("deliverWebhooksForRun", () => {
     expect(event?.errorMessage).toBeTruthy();
   }, 15_000);
 
+  it("does not follow a redirect to another host", async () => {
+    // A destination is an admin-approved URL. Following a redirect would
+    // let whoever runs it choose the host that actually receives the
+    // signed body and the receiver's own auth header.
+    const { job, run } = await makeJobAndRun();
+    let internalHits = 0;
+    const internal = await listen(() => {
+      internalHits += 1;
+    });
+    const { server: s, url } = await listen(() => {});
+    s.removeAllListeners("request");
+    s.on("request", (req, res) => {
+      req.resume();
+      // 307 preserves method and body, so this is the dangerous shape.
+      res.writeHead(307, { Location: internal.url }).end();
+    });
+    server = s;
+    const { destination } = await makeDestination(url);
+    await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
+
+    await deliverWebhooksForRun(run.id, job.id, config, logger);
+
+    expect(internalHits).toBe(0);
+    const events = await prisma.auditEvent.findMany({ where: { correlationId: run.id } });
+    expect(events[0]?.result).toBe("FAILURE");
+    expect(events[0]?.errorMessage).toMatch(/307/);
+    await new Promise<void>((resolve) => internal.server.close(() => resolve()));
+  }, 15_000);
+
+  it("does not retry a permanent rejection", async () => {
+    // A destination with a stale token would otherwise burn all three
+    // attempts and 7s of a worker slot on every single run, forever.
+    const { job, run } = await makeJobAndRun();
+    let attempts = 0;
+    const { server: s, url } = await listen(() => {});
+    s.removeAllListeners("request");
+    s.on("request", (req, res) => {
+      req.resume();
+      attempts += 1;
+      res.writeHead(401).end("unauthorized");
+    });
+    server = s;
+    const { destination } = await makeDestination(url);
+    await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
+
+    await deliverWebhooksForRun(run.id, job.id, config, logger);
+
+    expect(attempts).toBe(1);
+  }, 15_000);
+
+  it("still retries a transient rejection", async () => {
+    const { job, run } = await makeJobAndRun();
+    let attempts = 0;
+    const { server: s, url } = await listen(() => {});
+    s.removeAllListeners("request");
+    s.on("request", (req, res) => {
+      req.resume();
+      attempts += 1;
+      // Fail twice, then accept — proves the retry path still works.
+      if (attempts < 3) {
+        res.writeHead(503).end("later");
+        return;
+      }
+      res.writeHead(200).end("ok");
+    });
+    server = s;
+    const { destination } = await makeDestination(url);
+    await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
+
+    await deliverWebhooksForRun(run.id, job.id, config, logger);
+
+    expect(attempts).toBe(3);
+    const events = await prisma.auditEvent.findMany({ where: { correlationId: run.id } });
+    expect(events[0]?.result).toBe("SUCCESS");
+  }, 20_000);
+
+  it("delivers exactly once even though the audit write happens after the request", async () => {
+    // The audit write used to sit inside the retry try-block, so a DB
+    // failure after a successful POST re-sent the webhook.
+    const { job, run } = await makeJobAndRun();
+    let deliveries = 0;
+    const { server: s, url } = await listen(() => {
+      deliveries += 1;
+    });
+    server = s;
+    const { destination } = await makeDestination(url);
+    await prisma.jobWebhookDestination.create({ data: { jobId: job.id, webhookDestinationId: destination.id } });
+
+    await deliverWebhooksForRun(run.id, job.id, config, logger);
+
+    expect(deliveries).toBe(1);
+  }, 15_000);
+
   it("records a FAILURE audit event when the destination responds with a non-2xx status", async () => {
     const { job, run } = await makeJobAndRun();
     const { server: s, url } = await listen(() => {});
