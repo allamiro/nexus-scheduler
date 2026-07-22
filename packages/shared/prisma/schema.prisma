@@ -478,6 +478,26 @@ model WebhookDestination {
   notifyOnSuccess       Boolean  @default(true)
   notifyOnFailure       Boolean  @default(true)
   notifyOnCancelled     Boolean  @default(true)
+  // Toggleable per-destination (issue #224) — default true preserves
+  // every existing row's current behavior unchanged. Off skips computing
+  // and sending X-Nexus-Signature entirely, for receivers that only
+  // check a baked-in Authorization header (Bearer/Basic, via `headers`
+  // above) and don't verify HMAC signatures.
+  signPayload           Boolean  @default(true)
+  // Off by default: the fixed WebhookPayload shape, unchanged (issue
+  // #224). On, `payloadTemplate` is rendered and sent instead — for
+  // receivers with their own required body shape. Kept as a separate
+  // flag rather than "payloadTemplate set == enabled" so a saved
+  // template survives being toggled off without being discarded.
+  customPayloadEnabled  Boolean  @default(false)
+  // {{placeholder}}-templated JSON body (issue #224), rendered by
+  // packages/shared/src/webhookPayloadTemplate.ts — same two call sites
+  // (API test-send, worker real delivery) as the header-building logic
+  // above, so it lives in the shared package rather than the worker
+  // alone. Validated at write time (must render to well-formed JSON
+  // against a sample context) so a broken template is rejected
+  // immediately, not discovered mid-delivery in the worker's retry loop.
+  payloadTemplate       String?
   active                Boolean  @default(true)
   createdAt             DateTime @default(now())
 
@@ -575,9 +595,13 @@ model AppSettings {
   productName                    String   @default("Nexus Scheduler")
   logoUrl                        String?
   primaryColor                   String   @default("#1565c0")
-  // Loud, obviously-wrong defaults on purpose — REQUIREMENTS §6 requires
-  // this be explicitly configured; a plausible-looking default (e.g.
-  // "UNCLASSIFIED") would risk masking a deployment that never set it.
+  // Off by default (issue #228) — a deployment that doesn't need the
+  // marking just leaves it disabled, same posture as the consent banner
+  // below. Loud, obviously-wrong text/color defaults remain on purpose
+  // for when an admin *does* flip it on but hasn't set real values yet:
+  // a plausible-looking default (e.g. "UNCLASSIFIED") would risk masking
+  // a deployment that enabled the banner without configuring it.
+  classificationBannerEnabled    Boolean  @default(false)
   classificationBannerText       String   @default("UNCONFIGURED — SET CLASSIFICATION BANNER IN ADMIN SETTINGS")
   classificationBannerBgColor    String   @default("#b71c1c")
   classificationBannerTextColor  String   @default("#ffffff")
@@ -620,11 +644,12 @@ model AppSettings {
   usageReportRecipients          String[]              @default([])
   usageReportFrequency           UsageReportFrequency  @default(WEEKLY)
   usageReportLastSentAt          DateTime?
-  // Login-screen consent/warning banner (§40) — off by default (unlike
-  // the classification banner above, this has no legitimate "unconfigured
-  // but loud about it" state; a deployment that doesn't need one just
-  // leaves it disabled). Publicly readable (GET /api/settings) since the
-  // login page renders it before any authentication happens.
+  // Login-screen consent/warning banner (§40) — off by default, same as
+  // the classification banner above; unlike that one, this has no
+  // "unconfigured but loud about it" placeholder text since an empty
+  // title/body just renders nothing extra. Publicly readable (GET
+  // /api/settings) since the login page renders it before any
+  // authentication happens.
   consentBannerEnabled              Boolean  @default(false)
   consentBannerTitle                String   @default("")
   consentBannerBody                 String   @default("")

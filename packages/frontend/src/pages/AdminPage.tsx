@@ -47,6 +47,7 @@ import LockResetIcon from "@mui/icons-material/LockReset";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import PolicyIcon from "@mui/icons-material/Policy";
+import FlagIcon from "@mui/icons-material/Flag";
 import { useAuth } from "../context/AuthContext";
 import { Link as RouterLink } from "react-router-dom";
 import { SystemStatusSummary } from "../components/SystemStatusGraph";
@@ -117,9 +118,16 @@ interface WebhookDestination {
   notifyOnSuccess: boolean;
   notifyOnFailure: boolean;
   notifyOnCancelled: boolean;
+  // Issue #224.
+  signPayload: boolean;
+  customPayloadEnabled: boolean;
+  payloadTemplate: string | null;
   active: boolean;
   createdAt: string;
 }
+
+const WEBHOOK_TEMPLATE_PLACEHOLDERS =
+  "{{run_id}}, {{job_id}}, {{job_name}}, {{status}}, {{started_at}}, {{completed_at}}, {{output}}, {{error_message}}";
 
 interface WebhookDestinationWithSecret extends WebhookDestination {
   secret: string;
@@ -141,6 +149,9 @@ function WebhookDestinationsPanel() {
   const [notifyOnSuccess, setNotifyOnSuccess] = useState(true);
   const [notifyOnFailure, setNotifyOnFailure] = useState(true);
   const [notifyOnCancelled, setNotifyOnCancelled] = useState(true);
+  const [signPayload, setSignPayload] = useState(true);
+  const [customPayloadEnabled, setCustomPayloadEnabled] = useState(false);
+  const [payloadTemplate, setPayloadTemplate] = useState("");
 
   const [editingDestination, setEditingDestination] = useState<WebhookDestination | null>(null);
   const [editName, setEditName] = useState("");
@@ -149,6 +160,9 @@ function WebhookDestinationsPanel() {
   const [editNotifyOnSuccess, setEditNotifyOnSuccess] = useState(true);
   const [editNotifyOnFailure, setEditNotifyOnFailure] = useState(true);
   const [editNotifyOnCancelled, setEditNotifyOnCancelled] = useState(true);
+  const [editSignPayload, setEditSignPayload] = useState(true);
+  const [editCustomPayloadEnabled, setEditCustomPayloadEnabled] = useState(false);
+  const [editPayloadTemplate, setEditPayloadTemplate] = useState("");
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<{ name: string; secret: string } | null>(null);
@@ -170,6 +184,12 @@ function WebhookDestinationsPanel() {
           notifyOnSuccess,
           notifyOnFailure,
           notifyOnCancelled,
+          signPayload,
+          customPayloadEnabled,
+          // Not gated on customPayloadEnabled: a template stays saved
+          // even while the toggle is off, so re-enabling later doesn't
+          // lose it. An empty field means "no template" either way.
+          payloadTemplate: payloadTemplate.trim() ? payloadTemplate : null,
         }),
       }),
     onSuccess: (data) => {
@@ -181,6 +201,9 @@ function WebhookDestinationsPanel() {
       setNotifyOnSuccess(true);
       setNotifyOnFailure(true);
       setNotifyOnCancelled(true);
+      setSignPayload(true);
+      setCustomPayloadEnabled(false);
+      setPayloadTemplate("");
       setRevealedSecret({ name: data.name, secret: data.secret });
     },
   });
@@ -202,6 +225,9 @@ function WebhookDestinationsPanel() {
           notifyOnSuccess: editNotifyOnSuccess,
           notifyOnFailure: editNotifyOnFailure,
           notifyOnCancelled: editNotifyOnCancelled,
+          signPayload: editSignPayload,
+          customPayloadEnabled: editCustomPayloadEnabled,
+          payloadTemplate: editPayloadTemplate.trim() ? editPayloadTemplate : null,
         }),
       }),
     onSuccess: () => {
@@ -319,6 +345,9 @@ function WebhookDestinationsPanel() {
                     setEditNotifyOnSuccess(destination.notifyOnSuccess);
                     setEditNotifyOnFailure(destination.notifyOnFailure);
                     setEditNotifyOnCancelled(destination.notifyOnCancelled);
+                    setEditSignPayload(destination.signPayload);
+                    setEditCustomPayloadEnabled(destination.customPayloadEnabled);
+                    setEditPayloadTemplate(destination.payloadTemplate ?? "");
                   }}
                 >
                   Edit
@@ -391,6 +420,34 @@ function WebhookDestinationsPanel() {
               }}
             />
             <WebhookHeaderEditor headers={headerDrafts} onChange={setHeaderDrafts} />
+            <FormControlLabel
+              control={<Checkbox checked={signPayload} onChange={(e) => setSignPayload(e.target.checked)} />}
+              label="Sign the payload (X-Nexus-Signature header)"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+              Turn off for a receiver that only checks a baked-in Authorization header (above) and
+              doesn't verify HMAC signatures.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={customPayloadEnabled}
+                  onChange={(e) => setCustomPayloadEnabled(e.target.checked)}
+                />
+              }
+              label="Use a custom JSON payload"
+            />
+            {customPayloadEnabled && (
+              <TextField
+                label="Payload template"
+                value={payloadTemplate}
+                onChange={(e) => setPayloadTemplate(e.target.value)}
+                helperText={`Must render to valid JSON. Wrap every placeholder in double quotes, e.g. "status": "{{status}}". Available: ${WEBHOOK_TEMPLATE_PLACEHOLDERS}`}
+                multiline
+                minRows={4}
+                fullWidth
+              />
+            )}
             {createDestination.isError && (
               <Alert severity="error">
                 {createDestination.error instanceof Error
@@ -405,7 +462,12 @@ function WebhookDestinationsPanel() {
           <Button
             variant="contained"
             startIcon={<AddIcon />}
-            disabled={!name || !url || createDestination.isPending}
+            disabled={
+              !name ||
+              !url ||
+              (customPayloadEnabled && !payloadTemplate.trim()) ||
+              createDestination.isPending
+            }
             onClick={() => createDestination.mutate()}
           >
             Create
@@ -430,6 +492,36 @@ function WebhookDestinationsPanel() {
               }}
             />
             <WebhookHeaderEditor headers={editHeaderDrafts} onChange={setEditHeaderDrafts} />
+            <FormControlLabel
+              control={
+                <Checkbox checked={editSignPayload} onChange={(e) => setEditSignPayload(e.target.checked)} />
+              }
+              label="Sign the payload (X-Nexus-Signature header)"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+              Turn off for a receiver that only checks a baked-in Authorization header (above) and
+              doesn't verify HMAC signatures.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={editCustomPayloadEnabled}
+                  onChange={(e) => setEditCustomPayloadEnabled(e.target.checked)}
+                />
+              }
+              label="Use a custom JSON payload"
+            />
+            {editCustomPayloadEnabled && (
+              <TextField
+                label="Payload template"
+                value={editPayloadTemplate}
+                onChange={(e) => setEditPayloadTemplate(e.target.value)}
+                helperText={`Must render to valid JSON. Wrap every placeholder in double quotes, e.g. "status": "{{status}}". Available: ${WEBHOOK_TEMPLATE_PLACEHOLDERS}`}
+                multiline
+                minRows={4}
+                fullWidth
+              />
+            )}
             {updateDestination.isError && (
               <Alert severity="error">
                 {updateDestination.error instanceof Error
@@ -444,7 +536,12 @@ function WebhookDestinationsPanel() {
           <Button
             variant="contained"
             startIcon={<SaveIcon />}
-            disabled={!editName || !editUrl || updateDestination.isPending}
+            disabled={
+              !editName ||
+              !editUrl ||
+              (editCustomPayloadEnabled && !editPayloadTemplate.trim()) ||
+              updateDestination.isPending
+            }
             onClick={() => updateDestination.mutate()}
           >
             Save
@@ -544,6 +641,7 @@ interface AdminSettings {
   productName: string;
   logoUrl: string | null;
   primaryColor: string;
+  classificationBannerEnabled: boolean;
   classificationBannerText: string;
   classificationBannerBgColor: string;
   classificationBannerTextColor: string;
@@ -583,6 +681,7 @@ function SystemSettingsPanel() {
   const [productName, setProductName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [primaryColor, setPrimaryColor] = useState("#1565c0");
+  const [classificationBannerEnabled, setClassificationBannerEnabled] = useState(false);
   const [bannerText, setBannerText] = useState("");
   const [bannerBg, setBannerBg] = useState("");
   const [bannerFg, setBannerFg] = useState("");
@@ -617,6 +716,7 @@ function SystemSettingsPanel() {
     setProductName(s.productName);
     setLogoUrl(s.logoUrl ?? "");
     setPrimaryColor(s.primaryColor);
+    setClassificationBannerEnabled(s.classificationBannerEnabled);
     setBannerText(s.classificationBannerText);
     setBannerBg(s.classificationBannerBgColor);
     setBannerFg(s.classificationBannerTextColor);
@@ -649,6 +749,7 @@ function SystemSettingsPanel() {
           productName,
           logoUrl: logoUrl || null,
           primaryColor,
+          classificationBannerEnabled,
           classificationBannerText: bannerText,
           classificationBannerBgColor: bannerBg,
           classificationBannerTextColor: bannerFg,
@@ -710,11 +811,7 @@ function SystemSettingsPanel() {
   return (
     <Box>
       <Typography variant="h6" gutterBottom sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <PaletteIcon /> Branding &amp; Classification Banner
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        The banner below is the single, static banner shown at the top and bottom of every page —
-        independent of the per-Project/Prompt classification labels further down this page.
+        <PaletteIcon /> Branding
       </Typography>
 
       <Stack spacing={2} sx={{ maxWidth: 480 }}>
@@ -726,24 +823,6 @@ function SystemSettingsPanel() {
           value={primaryColor}
           onChange={(e) => setPrimaryColor(e.target.value)}
         />
-        <Divider />
-        <TextField label="Classification banner text" value={bannerText} onChange={(e) => setBannerText(e.target.value)} />
-        <Stack direction="row" spacing={2}>
-          <TextField
-            label="Banner background color"
-            type="color"
-            value={bannerBg}
-            onChange={(e) => setBannerBg(e.target.value)}
-            fullWidth
-          />
-          <TextField
-            label="Banner text color"
-            type="color"
-            value={bannerFg}
-            onChange={(e) => setBannerFg(e.target.value)}
-            fullWidth
-          />
-        </Stack>
 
         <Divider />
         <Typography variant="subtitle1">SMTP</Typography>
@@ -897,11 +976,56 @@ function SystemSettingsPanel() {
 
         <Divider />
         <Typography variant="subtitle1" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <FlagIcon fontSize="small" /> Banners
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Two independent, opt-in banners — each off until enabled below.
+        </Typography>
+
+        <Typography variant="subtitle2">Classification Banner</Typography>
+        <Typography variant="body2" color="text.secondary">
+          A single, static banner fixed at the top and bottom of every page (§6) — independent of
+          the per-Project/Prompt classification labels further down this page.
+        </Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={classificationBannerEnabled}
+              onChange={(e) => setClassificationBannerEnabled(e.target.checked)}
+            />
+          }
+          label="Enabled"
+        />
+        {classificationBannerEnabled && (
+          <>
+            <TextField label="Banner text" value={bannerText} onChange={(e) => setBannerText(e.target.value)} />
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="Banner background color"
+                type="color"
+                value={bannerBg}
+                onChange={(e) => setBannerBg(e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Banner text color"
+                type="color"
+                value={bannerFg}
+                onChange={(e) => setBannerFg(e.target.value)}
+                fullWidth
+              />
+            </Stack>
+          </>
+        )}
+
+        <Divider />
+        <Typography variant="subtitle2" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <PolicyIcon fontSize="small" /> Consent Banner
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Shown on the login screen before any authentication (§40) — independent of the
-          classification banner above, which is unconditional and shown on every page instead.
+          classification banner above, which (when enabled) shows on every page instead of just
+          pre-login.
         </Typography>
         <FormControlLabel
           control={
