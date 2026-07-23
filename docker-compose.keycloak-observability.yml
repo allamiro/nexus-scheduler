@@ -1,0 +1,46 @@
+# Grafana SSO — the Keycloak overlay's observability half.
+#
+# Separate from docker-compose.keycloak.yml on purpose: `grafana` only
+# exists when the observability overlay is loaded, and a compose overlay
+# that references a service the base never defines fails outright. Layer
+# all four files (or use `make up-obs-sso`):
+#
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.observability.yml \
+#                  -f docker-compose.keycloak.yml \
+#                  -f docker-compose.keycloak-observability.yml up -d
+#
+# This replaces the dev-only anonymous-admin Grafana with real logins:
+# anonymous access is turned OFF here, so an unauthenticated visitor now
+# gets a login page instead of an Admin session.
+services:
+  grafana:
+    environment:
+      # Overrides the base overlay's dev-only anonymous admin.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      # Grafana builds its redirect from this; it must match the client's
+      # registered redirect URI in the realm.
+      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3300}/
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_CLIENT_SECRET:-dev-only-grafana-secret}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://keycloak:${KEYCLOAK_PORT:-8081}/realms/nexus-scheduler/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:${KEYCLOAK_PORT:-8081}/realms/nexus-scheduler/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:${KEYCLOAK_PORT:-8081}/realms/nexus-scheduler/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: email
+      GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: preferred_username
+      GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: name
+      # Maps the realm's grafana client roles onto Grafana's own roles.
+      # Falls through to Viewer, matching the scheduler's fail-closed
+      # default for a user carrying no recognized client role.
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(resource_access.grafana.roles[*], 'Admin') && 'Admin' || contains(resource_access.grafana.roles[*], 'Editor') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      # The auth/token URLs above use the `keycloak` name so the browser
+      # and the grafana container resolve the same issuer; see
+      # docker-compose.keycloak.yml's /etc/hosts note.
+    depends_on:
+      keycloak:
+        condition: service_healthy

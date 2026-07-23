@@ -76,6 +76,19 @@ PDF_SERVICE_SHARED_SECRET=$(random_hex 32)
 KEYCLOAK_ADMIN=admin
 KEYCLOAK_ADMIN_PASSWORD=$(random_hex 16)
 
+# OIDC client secrets are deliberately NOT set here. The api enables OIDC
+# only when OIDC_CLIENT_SECRET is non-empty, so leaving it unset is what
+# keeps the plain stack on local break-glass auth. The Keycloak SSO
+# overlay (docker-compose.keycloak.yml / \`make up-sso\`) supplies all
+# three itself, defaulted to the fixed dev secrets baked into
+# docker/keycloak/realm-nexus-scheduler.json.
+#
+# Uncomment (and change the realm to match) only to override them:
+#   OIDC_CLIENT_SECRET=dev-only-nexus-scheduler-secret
+#   LIBRECHAT_OIDC_CLIENT_SECRET=dev-only-librechat-secret
+#   GRAFANA_OIDC_CLIENT_SECRET=dev-only-grafana-secret
+LIBRECHAT_OIDC_SESSION_SECRET=$(random_hex 24)
+
 # Built-in break-glass admin (REQUIREMENTS §4) — this env var is the
 # ongoing source of truth for its password, re-synced on every API
 # startup, not just a one-time seed.

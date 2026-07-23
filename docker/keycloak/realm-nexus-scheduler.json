@@ -1,0 +1,122 @@
+{
+  "realm": "nexus-scheduler",
+  "enabled": true,
+  "displayName": "Nexus Scheduler (local SSO)",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "clients": [
+    {
+      "clientId": "nexus-scheduler",
+      "name": "Nexus Scheduler",
+      "description": "The scheduler web app. Roles are read from resource_access.nexus-scheduler.roles by packages/api/src/auth/oidc.ts's mapKeycloakRole().",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "secret": "dev-only-nexus-scheduler-secret",
+      "redirectUris": ["http://localhost:8080/auth/callback"],
+      "webOrigins": ["http://localhost:8080"],
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email"],
+      "attributes": { "post.logout.redirect.uris": "http://localhost:8080/*" }
+    },
+    {
+      "clientId": "librechat",
+      "name": "LibreChat",
+      "description": "LibreChat OpenID login. LibreChat has no role model of its own here — any realm user may sign in.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "dev-only-librechat-secret",
+      "redirectUris": ["http://localhost:3080/oauth/openid/callback"],
+      "webOrigins": ["http://localhost:3080"],
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email"],
+      "attributes": { "post.logout.redirect.uris": "http://localhost:3080/*" }
+    },
+    {
+      "clientId": "grafana",
+      "name": "Grafana",
+      "description": "Grafana generic_oauth. Its role_attribute_path maps resource_access.grafana.roles to Grafana's Admin/Editor/Viewer.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "dev-only-grafana-secret",
+      "redirectUris": ["http://localhost:3300/login/generic_oauth"],
+      "webOrigins": ["http://localhost:3300"],
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email"],
+      "attributes": { "post.logout.redirect.uris": "http://localhost:3300/*" }
+    }
+  ],
+  "roles": {
+    "client": {
+      "nexus-scheduler": [
+        { "name": "ADMIN", "description": "Full administrative access in Nexus Scheduler" },
+        { "name": "EDITOR", "description": "Create and edit projects, prompts, jobs, schedules" },
+        { "name": "VIEW", "description": "Read-only (also the fail-closed default for users with no client role)" }
+      ],
+      "grafana": [
+        { "name": "Admin", "description": "Grafana org admin" },
+        { "name": "Editor", "description": "Grafana editor" },
+        { "name": "Viewer", "description": "Grafana viewer" }
+      ]
+    }
+  },
+  "users": [
+    {
+      "username": "sso-admin",
+      "email": "sso-admin@nexus-scheduler.local",
+      "firstName": "Ada",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "sso-admin-password", "temporary": false }],
+      "clientRoles": { "nexus-scheduler": ["ADMIN"], "grafana": ["Admin"] }
+    },
+    {
+      "username": "sso-editor",
+      "email": "sso-editor@nexus-scheduler.local",
+      "firstName": "Eli",
+      "lastName": "Editor",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "sso-editor-password", "temporary": false }],
+      "clientRoles": { "nexus-scheduler": ["EDITOR"], "grafana": ["Editor"] }
+    },
+    {
+      "username": "sso-viewer",
+      "email": "sso-viewer@nexus-scheduler.local",
+      "firstName": "Vera",
+      "lastName": "Viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "sso-viewer-password", "temporary": false }],
+      "clientRoles": { "nexus-scheduler": ["VIEW"], "grafana": ["Viewer"] }
+    },
+    {
+      "username": "sso-norole",
+      "email": "sso-norole@nexus-scheduler.local",
+      "firstName": "Nora",
+      "lastName": "NoRole",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "sso-norole-password", "temporary": false }],
+      "clientRoles": {}
+    }
+  ]
+}
