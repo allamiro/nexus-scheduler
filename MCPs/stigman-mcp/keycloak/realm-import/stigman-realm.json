@@ -1,0 +1,209 @@
+{
+  "realm": "stigman",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 600,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "STIG Manager privilege: application administrator"
+      },
+      {
+        "name": "create_collection",
+        "description": "STIG Manager privilege: may create collections"
+      },
+      {
+        "name": "user",
+        "description": "STIG Manager privilege: baseline user"
+      }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "stig-manager:stig",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "stig-manager:stig:read",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "stig-manager:collection",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "stig-manager:collection:read",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "stig-manager:user",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "stig-manager:user:read",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "stig-manager:op",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "stig-manager",
+      "name": "STIG Manager web client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:${STIGMAN_HOST_PORT}",
+      "redirectUris": [
+        "http://localhost:${STIGMAN_HOST_PORT}/*"
+      ],
+      "webOrigins": [
+        "http://localhost:${STIGMAN_HOST_PORT}"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:${STIGMAN_HOST_PORT}/*"
+      },
+      "defaultClientScopes": [
+        "stig-manager:stig",
+        "stig-manager:stig:read",
+        "stig-manager:collection",
+        "stig-manager:collection:read",
+        "stig-manager:user",
+        "stig-manager:user:read",
+        "stig-manager:op"
+      ],
+      "protocolMappers": [
+        {
+          "name": "stig-manager-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "stig-manager",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_access.roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "nexus-mcp",
+      "name": "Nexus Scheduler MCP service account",
+      "description": "Confidential client used by the STIG Manager MCP server (MCPs/stigman-mcp) for client-credentials access to the STIG Manager API.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${NEXUS_MCP_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": [
+        "stig-manager:stig:read",
+        "stig-manager:collection:read",
+        "stig-manager:user:read",
+        "stig-manager:op"
+      ],
+      "protocolMappers": [
+        {
+          "name": "stig-manager-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "stig-manager",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "stigadmin",
+      "enabled": true,
+      "firstName": "STIG",
+      "lastName": "Admin",
+      "email": "stigadmin@lab.local",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${STIGMAN_ADMIN_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin",
+        "create_collection",
+        "user"
+      ]
+    }
+  ]
+}

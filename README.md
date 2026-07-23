@@ -491,6 +491,14 @@ docker build -f packages/frontend/Dockerfile -t nexus-scheduler-frontend .
 rendering) — the API and Worker call it over HTTP rather than rendering
 in-process.
 
+## MCP examples
+
+[`MCPs/`](./MCPs/README.md) contains worked examples of extending the
+LibreChat Agents this app drives with MCP tools, so scheduled jobs can
+report on live data from other systems — starting with
+[`MCPs/stigman-mcp`](./MCPs/stigman-mcp/README.md), scheduled STIG
+compliance reports from STIG Manager.
+
 ## Database schema changes
 
 The schema lives at `packages/shared/prisma/schema.prisma`.

@@ -1333,6 +1333,95 @@ metrics:
   dividend), file types, pages per document, and stage latencies.
 `,
   },
+  {
+    slug: "mcp",
+    title: "Building an MCP integration",
+    category: "Architecture",
+    summary: "Give the agent tools that reach other systems, so scheduled jobs report on live external data — with a complete STIG Manager example.",
+    content: `
+A Nexus Scheduler job is a prompt sent to a LibreChat Agent. LibreChat
+Agents can carry **tools**, and the [Model Context Protocol](https://modelcontextprotocol.io)
+(MCP) is the standard way to hand them some: a small server that
+exposes typed operations ("list collections", "get metrics") over HTTP,
+which the agent calls mid-run. Combine that with a schedule and you get
+recurring, audited reports generated from **live data in another
+system** — the scheduler contributes the cadence, run history, cost
+tracking, approvals, and PDF export it already has.
+
+## How the pieces connect
+
+\`\`\`mermaid
+flowchart LR
+  NS[Nexus Scheduler job] -->|Agents API| LC[LibreChat Agent]
+  LC -->|MCP tools| MCP[Your MCP server]
+  MCP -->|service-account auth| EXT[External system]
+  EXT --> MCP --> LC -->|markdown + mermaid charts| NS
+\`\`\`
+
+Two identities, kept separate on purpose:
+
+- **The job's API key** authenticates Nexus Scheduler to LibreChat —
+  unchanged from any other job ([API Keys](/help/api-keys)).
+- **A service account** authenticates the MCP server to the external
+  system. The agent never holds that credential; it lives only in the
+  MCP server's environment, and the external system decides what the
+  service account may see.
+
+## The recipe
+
+1. **Write the MCP server.** A few read-only tools that return compact
+   JSON beat one tool that dumps everything: the agent composes them,
+   and less tool output means fewer context tokens per run. Serve
+   streamable-HTTP; run it as a container beside the stack.
+2. **Give it a service account.** If the external system sits behind an
+   OIDC provider (Keycloak, in the worked example), create a dedicated
+   **confidential client** with only the client-credentials flow and
+   only the scopes the tools need, then grant that service account
+   least-privilege access *in the external system itself*.
+3. **Wire LibreChat.** Add an \`mcpServers\` entry pointing at the
+   server to \`librechat.yaml\` and restart LibreChat.
+4. **Create the Agent.** In LibreChat, create an agent, attach the MCP
+   tools, and pick a genuinely tool-capable model — a multi-step report
+   is the hardest kind of tool use, and undersized models invent
+   numbers instead of calling tools.
+5. **Create the scheduler artifacts.** A Project for governance, a
+   [Prompt](/help/prompts) that names the exact tool sequence and the
+   exact report sections (use \`{{variables}}\` so one prompt serves
+   many targets), a [Job](/help/jobs) binding prompt + agent + API key,
+   and a [Schedule](/help/schedules). Shared-project schedules go
+   through approval — exactly what you want before something runs
+   unattended against another system.
+
+## Reports with charts
+
+Run output renders as markdown, including **mermaid** code fences — so
+a prompt that asks for a \`pie\` or \`xychart-beta\` block gets real
+charts in the run view ([Runs, output & PDF reports](/help/runs)).
+Have the prompt pin the chart syntax down and forbid prose inside the
+fence; models drift otherwise.
+
+## What good prompts look like
+
+The difference between a demo and a dependable scheduled report is the
+prompt. The ones that work: name the tools **in order**, fix the report
+sections exactly, require every number to come from a tool result in
+this run, and say what to do when a tool fails (report the gap — not
+improvise). See the worked example's prompts for the full pattern.
+
+## The worked example
+
+The repository ships a complete, runnable example in
+\`MCPs/stigman-mcp\`: an MCP server for **STIG Manager** (DISA STIG
+compliance tracking) with a Keycloak client-credentials service
+account, a lab compose stack to test against, ready-to-paste prompts
+for a per-collection posture report and a fleet summary, and an
+air-gap transfer checklist. Its README walks every step of this
+recipe with real commands — start there when building your own.
+
+See also [Architecture & data flow](/help/architecture) for where
+LibreChat and the gateway sit in the system.
+`,
+  },
 ];
 
 export function findKbArticle(slug: string): KbArticle | undefined {

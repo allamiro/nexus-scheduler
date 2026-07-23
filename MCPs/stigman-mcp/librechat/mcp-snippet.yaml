@@ -1,0 +1,32 @@
+# Add this block to docker/librechat/librechat.yaml (top level, sibling
+# of `endpoints:`), then restart the librechat container. See the README
+# section "Wire LibreChat to the MCP server" for the networking choice.
+#
+# Option A — MCP lab runs beside the main compose stack on the same host
+# (Docker Desktop / mac & windows):
+mcpServers:
+  stigman:
+    type: streamable-http
+    url: http://host.docker.internal:8005/mcp
+    timeout: 60000
+# host.docker.internal resolves to a private IP, and LibreChat's SSRF
+# protection blocks MCP URLs on private addresses unless the exact
+# host:port pair is exempted:
+mcpSettings:
+  allowedAddresses:
+    - "host.docker.internal:8005"
+
+# Option B — one shared network (works everywhere, including Linux and
+# air-gapped hosts): attach the librechat container to the lab network
+#   docker network connect stigman-mcp-lab_stigman-lab librechat
+# (or add the network in docker-compose.yml), then use the service name:
+#
+# mcpServers:
+#   stigman:
+#     type: streamable-http
+#     url: http://stigman-mcp:8005/mcp
+#     timeout: 60000
+# mcpSettings:
+#   allowedAddresses:
+#     - "stigman-mcp:8005"
+
